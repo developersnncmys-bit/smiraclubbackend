@@ -1,24 +1,43 @@
 /**
  * Sending the one-time code.
  *
- * No provider is wired yet. Until one is, development prints the code to the
- * server log and hands it back in the response so the desk can sign in; in
- * production that is refused outright, because an OTP nobody can receive is
- * not a login, it is a lock.
+ * No SMS provider is wired yet. Until one is, the code can be handed back in
+ * the response so a desk can still sign in — but understand what that is: an
+ * authentication bypass. Anybody who can reach the API can ask for a code for
+ * any number and be told what it is.
  *
- * To go live: implement send() against your provider — MSG91, Twilio,
- * Gupshup — and delete the development branch below.
+ * So it never happens by accident. It requires ALLOW_DEV_OTP=true, which is a
+ * deliberate choice somebody has to make and can see in the environment.
+ * Relying on NODE_ENV was not enough — a platform that does not set it left
+ * the bypass wide open on a public URL.
+ *
+ * To go live properly: implement send() against your provider — MSG91,
+ * Twilio, Gupshup — and unset ALLOW_DEV_OTP.
  */
-const isProduction = () => process.env.NODE_ENV === 'production';
+const allowDevOtp = () => String(process.env.ALLOW_DEV_OTP || '') === 'true';
+
+let warned = false;
 
 async function send(phone, code) {
-  if (isProduction()) {
-    // Nothing is configured, so say so rather than pretend it was sent.
-    throw new Error('No SMS provider is configured — the code cannot be delivered');
+  if (!allowDevOtp()) {
+    // Refuse rather than pretend. An OTP nobody can receive is a lock; an OTP
+    // handed back over the wire is not authentication at all.
+    throw new Error(
+      'No SMS provider is configured. Wire one in src/helpers/sms.js, or set ' +
+        'ALLOW_DEV_OTP=true to return the code in the response — development only.'
+    );
+  }
+
+  if (!warned) {
+    warned = true;
+    console.warn(
+      '\n  ⚠  ALLOW_DEV_OTP is on — one-time codes come back in the API response.\n' +
+        '     Anyone who can reach this API can sign in as anyone. Development only.\n'
+    );
   }
 
   console.log(`\n  ── OTP for ${phone}: ${code} ──\n`);
   return { delivered: false, devCode: code };
 }
 
-module.exports = { send, isProduction };
+module.exports = { send, allowDevOtp };
