@@ -59,6 +59,16 @@ app.get('/health', (req, res) =>
   res.json({ ok: true, service: 'smira-api', at: new Date().toISOString() })
 );
 
+/** Landing on the root should say what this is, not 404. */
+app.get('/', (req, res) =>
+  res.json({
+    success: true,
+    service: 'Smira Club API',
+    docs: 'Every module is under /api — GET /api lists them',
+    health: '/health',
+  })
+);
+
 app.use('/api', routes);
 
 app.use(notFound);

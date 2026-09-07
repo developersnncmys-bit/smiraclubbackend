@@ -1,3 +1,7 @@
+/**
+ * Running it locally. On Vercel the entry is api/index.js instead, because a
+ * serverless platform never calls listen().
+ */
 require('dotenv').config();
 
 const app = require('./src/app');
