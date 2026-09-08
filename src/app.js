@@ -6,6 +6,7 @@ const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 
 const routes = require('./routes');
+const { isProduction, isTest } = require('./config/env');
 const { notFound, errorHandler } = require('./middleware/error');
 
 const app = express();
@@ -24,24 +25,40 @@ const origins = (process.env.CORS_ORIGIN || '')
 /**
  * In development any localhost port is fine — Vite moves to 5174, 5175 and on
  * whenever a port is busy, and chasing that in a config file is a waste of
- * everyone's afternoon. In production only the listed origins get through.
+ * everyone's afternoon.
  */
-const isDev = process.env.NODE_ENV !== 'production';
+const isDev = !isProduction;
 const localhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+
+/**
+ * The panel's own deployments, allowed without anybody having to set an
+ * environment variable. Vercel gives every build its own hostname — the
+ * production one, plus a preview per commit — so the whole family is matched
+ * rather than one URL that goes stale on the next deploy. CORS_ORIGIN still
+ * adds to this, which is where a custom domain goes.
+ */
+const ownDeployments = /^https:\/\/smiraclub[a-z0-9-]*\.vercel\.app$/;
+
+const allowed = (origin) =>
+  (isDev && localhost.test(origin)) || origins.includes(origin) || ownDeployments.test(origin);
 
 app.use(
   cors({
+    /**
+     * A disallowed origin is not a server error. Throwing here turned every
+     * preflight into a 500, which reads in the browser as "the API is broken"
+     * rather than "that origin is not on the list" — so answer without the
+     * CORS headers and let the browser do the blocking, which is its job.
+     */
     origin(origin, done) {
       if (!origin) return done(null, true); // curl, Postman, server to server
-      if (isDev && localhost.test(origin)) return done(null, true);
-      if (origins.includes(origin)) return done(null, true);
-      return done(new Error(`${origin} is not allowed by CORS`));
+      return done(null, allowed(origin));
     },
     credentials: true,
   })
 );
 
-if (process.env.NODE_ENV !== 'test') app.use(morgan('dev'));
+if (!isTest) app.use(morgan('dev'));
 
 // Signing in is the one route worth throttling — everything else sits
 // behind a token already.

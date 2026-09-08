@@ -1,4 +1,5 @@
 const ApiError = require('../helpers/ApiError');
+const { isProduction } = require('../config/env');
 
 function notFound(req, res, next) {
   next(ApiError.notFound(`No route for ${req.method} ${req.originalUrl}`));
@@ -32,7 +33,9 @@ function errorHandler(err, req, res, next) {
     message: statusCode === 500 ? 'Something went wrong at our end' : error.message,
   };
   if (error.details) body.details = error.details;
-  if (process.env.NODE_ENV !== 'production' && statusCode === 500) body.stack = err.stack;
+  // A stack trace names the file layout and the libraries in use. It is a gift
+  // to somebody probing the API, so it stays on the server's own log.
+  if (!isProduction && statusCode === 500) body.stack = err.stack;
 
   if (statusCode === 500) console.error(err);
 
