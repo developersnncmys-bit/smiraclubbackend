@@ -119,8 +119,9 @@ exports.requestOtp = catchAsync(async (req, res) => {
       phone: `•••••• ${digits.slice(-4)}`,
       name: user.name.split(' ')[0],
       expiresInMinutes: OTP_MINUTES,
-      // Only ever present while no provider is wired, and never in production.
-      ...(sent.devCode ? { devCode: sent.devCode } : {}),
+      // Present only while no SMS provider is wired. The panel shows it on
+      // screen and says why, so nobody mistakes the demo for the real thing.
+      ...(sent.devCode ? { devCode: sent.devCode, demo: true } : {}),
     },
   });
 });

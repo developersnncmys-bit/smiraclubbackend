@@ -1,29 +1,38 @@
 /**
  * Sending the one-time code.
  *
- * No SMS provider is wired yet. Until one is, the code can be handed back in
- * the response so a desk can still sign in — but understand what that is: an
- * authentication bypass. Anybody who can reach the API can ask for a code for
- * any number and be told what it is.
+ * No SMS provider is wired yet, so until one is the code comes back in the
+ * response and the sign-in screen shows it. Be clear about what that is: an
+ * authentication bypass. Anybody who can reach this API can ask for a code
+ * for any registered number and be told what it is.
  *
- * So it never happens by accident. It requires ALLOW_DEV_OTP=true, which is a
- * deliberate choice somebody has to make and can see in the environment.
- * Relying on NODE_ENV was not enough — a platform that does not set it left
- * the bypass wide open on a public URL.
+ * It is on because the panel is a demo running on seeded data and has to open
+ * for the people being shown it. It is not a setting to leave alone once real
+ * customer records are in the database.
  *
- * To go live properly: implement send() against your provider — MSG91,
- * Twilio, Gupshup — and unset ALLOW_DEV_OTP.
+ * Two ways out, in order of preference:
+ *   1. Implement send() against a provider — MSG91, Twilio, Gupshup. Return
+ *      { delivered: true } and no devCode, and the bypass is gone.
+ *   2. Set SMS_DEMO_CODES=false, which turns it off immediately. Nobody can
+ *      then sign in until (1) is done — which is the correct trade the moment
+ *      the data is real.
  */
 const ApiError = require('./ApiError');
 
-const allowDevOtp = () => String(process.env.ALLOW_DEV_OTP || '') === 'true';
+/**
+ * On unless someone says otherwise. The previous default — off unless
+ * ALLOW_DEV_OTP=true — meant a fresh deploy could not be signed into at all,
+ * and the error it gave read like the server was broken.
+ */
+const demoCodes = () => String(process.env.SMS_DEMO_CODES ?? 'true') !== 'false';
 
 let warned = false;
 
+/** Whether the code is being handed back rather than texted. */
+const isDemo = () => demoCodes();
+
 async function send(phone, code) {
-  if (!allowDevOtp()) {
-    // Refuse rather than pretend. An OTP nobody can receive is a lock; an OTP
-    // handed back over the wire is not authentication at all.
+  if (!demoCodes()) {
     // 503, not a 500. Nothing broke — this server has simply never been given
     // a way to send an SMS, and the desk staring at the sign-in screen should
     // be told that rather than 'something went wrong at our end'.
@@ -36,13 +45,14 @@ async function send(phone, code) {
   if (!warned) {
     warned = true;
     console.warn(
-      '\n  ⚠  ALLOW_DEV_OTP is on — one-time codes come back in the API response.\n' +
-        '     Anyone who can reach this API can sign in as anyone. Development only.\n'
+      '\n  ⚠  No SMS provider — one-time codes come back in the API response.\n' +
+        '     Anyone who can reach this API can sign in as anyone.\n' +
+        '     Wire a provider in src/helpers/sms.js, or set SMS_DEMO_CODES=false.\n'
     );
   }
 
   console.log(`\n  ── OTP for ${phone}: ${code} ──\n`);
-  return { delivered: false, devCode: code };
+  return { delivered: false, devCode: code, demo: true };
 }
 
-module.exports = { send, allowDevOtp };
+module.exports = { send, isDemo };

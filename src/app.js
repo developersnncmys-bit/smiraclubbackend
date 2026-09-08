@@ -60,17 +60,46 @@ app.use(
 
 if (!isTest) app.use(morgan('dev'));
 
-// Signing in is the one route worth throttling — everything else sits
-// behind a token already.
-const signInLimiter = rateLimit({
+/**
+ * Throttling the way in, without throttling the office.
+ *
+ * One limiter counting every auth request from an IP address was wrong twice
+ * over. A travel desk sits behind a single office IP, so one person testing
+ * their sign-in spent everybody's budget — and mistyping a six-digit code
+ * three times counted against the same allowance as asking for the code,
+ * which meant the fix for a typo was to be locked out.
+ *
+ * So: asking for a code is counted per phone number, which is the thing worth
+ * protecting from being flooded with SMS. Entering one is counted loosely per
+ * IP, because a wrong code is already limited to five tries per account on
+ * the account itself. Requests that fail because the server is broken do not
+ * count against anyone — being unlucky is not abuse.
+ */
+const perPhone = rateLimit({
   windowMs: 10 * 60 * 1000,
-  limit: 20,
+  limit: 12,
+  // Per number, not per IP — a shared office address is one desk, not one
+  // attacker, and the number is what an SMS flood would be aimed at.
+  keyGenerator: (req) => String(req.body?.phone || '').replace(/\D/g, '') || req.ip,
+  message: { success: false, message: 'Too many codes requested for that number — try again in a few minutes' },
+  skipFailedRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: false,
+});
+
+const perAddress = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 60,
+  message: { success: false, message: 'Too many sign-in attempts — try again in a few minutes' },
+  skipFailedRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-app.use('/api/auth/login', signInLimiter);
-app.use('/api/auth/otp', signInLimiter);
+app.use('/api/auth/login', perAddress);
+app.use('/api/auth/otp/request', perPhone);
+app.use('/api/auth/otp/verify', perAddress);
 
 app.get('/health', (req, res) =>
   res.json({ ok: true, service: 'smira-api', at: new Date().toISOString() })
