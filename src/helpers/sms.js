@@ -14,6 +14,8 @@
  * To go live properly: implement send() against your provider — MSG91,
  * Twilio, Gupshup — and unset ALLOW_DEV_OTP.
  */
+const ApiError = require('./ApiError');
+
 const allowDevOtp = () => String(process.env.ALLOW_DEV_OTP || '') === 'true';
 
 let warned = false;
@@ -22,9 +24,12 @@ async function send(phone, code) {
   if (!allowDevOtp()) {
     // Refuse rather than pretend. An OTP nobody can receive is a lock; an OTP
     // handed back over the wire is not authentication at all.
-    throw new Error(
-      'No SMS provider is configured. Wire one in src/helpers/sms.js, or set ' +
-        'ALLOW_DEV_OTP=true to return the code in the response — development only.'
+    // 503, not a 500. Nothing broke — this server has simply never been given
+    // a way to send an SMS, and the desk staring at the sign-in screen should
+    // be told that rather than 'something went wrong at our end'.
+    throw new ApiError(
+      503,
+      'One-time codes cannot be sent — this server has no SMS provider configured'
     );
   }
 
