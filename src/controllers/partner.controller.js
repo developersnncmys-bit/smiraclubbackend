@@ -16,6 +16,67 @@ exports.create = base.create;
 exports.update = base.update;
 exports.remove = base.remove;
 
+/**
+ * A property owner applying from the public website.
+ *
+ * The only route on this module that is not behind a sign-in, so it is written
+ * defensively: the fields are copied one by one rather than spread from the
+ * body, and where the application sits in the onboarding flow is decided here
+ * rather than accepted from the form. Otherwise anyone could post themselves
+ * an approved, active partner record.
+ *
+ * It lands where the desk expects to find it — Partners → Onboarding, on
+ * Registration, waiting on papers.
+ */
+exports.apply = catchAsync(async (req, res) => {
+  const b = req.body || {};
+  const text = (v, max = 120) => String(v ?? '').trim().slice(0, max);
+
+  const name = text(b.name);
+  const phone = text(b.phone, 20);
+  if (!name) throw ApiError.badRequest('Tell us the property name');
+  if (!phone) throw ApiError.badRequest('Tell us a phone number we can reach you on');
+
+  const CATEGORIES = ['Hotel', 'Villa', 'Package', 'Lifestyle', 'Transport', 'Restaurant', 'Activity', 'Spa'];
+  const category = CATEGORIES.includes(b.category) ? b.category : 'Hotel';
+
+  const rooms = Math.max(0, Math.min(9999, Number(b.rooms) || 0));
+
+  const partner = await Partner.create({
+    name,
+    category,
+    businessType: text(b.businessType, 60),
+    location: text(b.location, 80),
+
+    contact: text(b.contact, 80),
+    phone,
+    whatsapp: text(b.whatsapp, 20),
+    email: text(b.email, 120).toLowerCase(),
+
+    gst: text(b.gst, 20),
+    pan: text(b.pan, 20),
+    registration: text(b.registration, 60),
+    upi: text(b.upi, 60),
+    bank: text(b.bank, 120),
+    rooms,
+
+    // Not the applicant's to decide.
+    submittedOn: new Date(),
+    stage: 'Registration',
+    verification: 'Waiting',
+    approval: 'Waiting',
+    status: 'Pending',
+    activities: [{ at: new Date(), text: 'Applied through the website' }],
+  });
+
+  // The reference is all they get back. The record itself is the desk's.
+  res.status(201).json({
+    success: true,
+    message: 'Application received',
+    data: { reference: partner.code, name: partner.name },
+  });
+});
+
 /** Papers checked. */
 exports.verify = catchAsync(async (req, res) => {
   const partner = await Partner.findByIdAndUpdate(
