@@ -1,4 +1,5 @@
 require('dotenv').config();
+const { seedPartnerDemo } = require('./partnerDemo');
 
 const { connectDB, mongoose } = require('../config/db');
 const models = require('../models');
@@ -315,6 +316,10 @@ async function seed() {
       createdBy: admin._id,
     });
   }
+
+  // A couple of bookings, a ticket and papers for each demo partner.
+  console.log('\nPartner demo data:');
+  await seedPartnerDemo();
 
   const counts = {};
   for (const [name, Model] of Object.entries(models)) {

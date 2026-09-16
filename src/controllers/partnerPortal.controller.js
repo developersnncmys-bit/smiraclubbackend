@@ -413,7 +413,7 @@ exports.dashboard = catchAsync(async (req, res) => {
       tickets: tickets.map((t) => ({
         id: t._id,
         code: t.code,
-        subject: t.subject || t.title || t.category || 'Ticket',
+        subject: t.subCategory || t.category || 'Ticket',
         status: t.status || t.stage,
         createdAt: t.createdAt,
       })),
