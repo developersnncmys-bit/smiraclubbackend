@@ -248,7 +248,34 @@ exports.saveListing = catchAsync(async (req, res) => {
     throw ApiError.badRequest('Your listing is with the Smira desk and cannot be changed right now');
   }
 
-  const body = req.body || {};
+  const body = { ...(req.body || {}) };
+
+  /**
+   * Links are shown to the desk as links, so only web addresses are kept. A
+   * `javascript:` or `data:` value would otherwise sit waiting for a staff
+   * member to click it.
+   */
+  const web = (u) => (/^https?:\/\/\S+$/i.test(String(u || '').trim()) ? String(u).trim() : '');
+  if (body.photos) {
+    body.photos = {
+      property: (Array.isArray(body.photos.property) ? body.photos.property : []).map(web).filter(Boolean),
+      rooms: (Array.isArray(body.photos.rooms) ? body.photos.rooms : []).map(web).filter(Boolean),
+    };
+  }
+  if (body.location) body.location = { ...body.location, mapsUrl: web(body.location.mapsUrl) };
+  if (body.ownership?.documentLinks) {
+    const d = body.ownership.documentLinks;
+    body.ownership = {
+      ...body.ownership,
+      documentLinks: {
+        ownershipProof: web(d.ownershipProof),
+        leaseAgreement: web(d.leaseAgreement),
+        authorisation: web(d.authorisation),
+      },
+    };
+  }
+  if (body.bank) body.bank = { ...body.bank, proofLink: web(body.bank.proofLink) };
+
   const listing = partner.listing || {};
   for (const key of SECTIONS) {
     if (body[key] !== undefined) listing[key] = body[key];
