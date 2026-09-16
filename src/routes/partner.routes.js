@@ -36,6 +36,8 @@ router
 router.patch('/:id/verify', can('Vendors', 'edit'), c.verify);
 router.patch('/:id/approve', can('Vendors', 'approve'), c.approve);
 router.patch('/:id/reject', can('Vendors', 'approve'), validate({ reason: 'required' }), c.reject);
+router.patch('/:id/request-changes', can('Vendors', 'approve'), validate({ note: 'required' }), c.requestChanges);
+router.patch('/:id/go-live', can('Vendors', 'approve'), c.goLive);
 
 router
   .route('/:id')

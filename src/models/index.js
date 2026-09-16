@@ -18,6 +18,7 @@ module.exports = {
   MembershipPlan: require('./MembershipPlan'),
   Offer: require('./Offer'),
   Partner: require('./Partner'),
+  OtpChallenge: require('./OtpChallenge'),
   Payment: require('./Payment'),
   Referral: require('./Referral'),
   Refund: require('./Refund'),

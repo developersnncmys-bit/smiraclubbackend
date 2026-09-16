@@ -77,6 +77,50 @@ exports.apply = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * Sent back to the partner with a note of what to change.
+ *
+ * The listing opens for editing again in their portal, and the note is the
+ * first thing they see. They resubmit, and it comes back to review.
+ */
+exports.requestChanges = catchAsync(async (req, res) => {
+  const note = String(req.body.note || '').trim();
+  if (!note) throw ApiError.badRequest('Say what needs changing');
+
+  const partner = await Partner.findById(req.params.id);
+  if (!partner) throw ApiError.notFound('Partner not found');
+  if (partner.stage !== 'Admin review') {
+    throw ApiError.badRequest('Only a listing that is in review can be sent back');
+  }
+
+  partner.stage = 'Needs changes';
+  partner.approval = 'Needs changes';
+  partner.reviewNote = note.slice(0, 2000);
+  partner.activities.push({ at: new Date(), text: `Changes requested by ${req.user.name} — ${note}` });
+  await partner.save();
+
+  await record(req, 'update', 'Partner', partner._id, `${partner.name} sent back for changes`);
+  res.json({ success: true, data: partner });
+});
+
+/** Contract signed — the partner goes live and their dashboard opens. */
+exports.goLive = catchAsync(async (req, res) => {
+  const partner = await Partner.findById(req.params.id);
+  if (!partner) throw ApiError.notFound('Partner not found');
+  if (partner.stage !== 'Contract' || partner.approval !== 'Approved') {
+    throw ApiError.badRequest('A partner goes live only after approval, once the contract is signed');
+  }
+
+  partner.stage = 'Live';
+  partner.status = 'Active';
+  partner.contractSignedOn = new Date();
+  partner.activities.push({ at: new Date(), text: `Contract signed — put live by ${req.user.name}` });
+  await partner.save();
+
+  await record(req, 'approve', 'Partner', partner._id, `${partner.name} is live`);
+  res.json({ success: true, data: partner });
+});
+
 /** Papers checked. */
 exports.verify = catchAsync(async (req, res) => {
   const partner = await Partner.findByIdAndUpdate(
@@ -93,18 +137,25 @@ exports.verify = catchAsync(async (req, res) => {
   res.json({ success: true, data: partner });
 });
 
-/** Signed off and live. */
+/**
+ * Approved after review — the contract comes next.
+ *
+ * The client's flow puts a contract between approval and going live, so
+ * approving no longer switches the partner on. Reviewing the listing is also
+ * where the papers are checked, so approval marks them verified.
+ */
 exports.approve = catchAsync(async (req, res) => {
   const partner = await Partner.findById(req.params.id);
   if (!partner) throw ApiError.notFound('Partner not found');
-  if (partner.verification !== 'Verified') {
-    throw ApiError.badRequest('The papers have to be verified before it can go live');
+  if (partner.status === 'Active' && !['Registration', 'Admin review', 'Needs changes', 'Contract'].includes(partner.stage)) {
+    throw ApiError.badRequest('That partner is already live');
   }
 
   partner.approval = 'Approved';
-  partner.stage = 'Active';
-  partner.status = 'Active';
-  partner.activities.push({ at: new Date(), text: `Approved by ${req.user.name}` });
+  partner.verification = 'Verified';
+  partner.stage = 'Contract';
+  partner.reviewNote = undefined;
+  partner.activities.push({ at: new Date(), text: `Approved by ${req.user.name} — contract next` });
   await partner.save();
 
   await record(req, 'approve', 'Partner', partner._id, `${partner.name} approved`);
