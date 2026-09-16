@@ -169,9 +169,9 @@ async function seed() {
 
   // -- Partners and stock ----------------------------------------------------
   const partnerSeed = [
-    { name: 'Ayana Resort & Spa', category: 'Hotel', location: 'Jimbaran, Bali', commission: 12, status: 'Active', verification: 'Verified', approval: 'Approved', bookings: 125, confirmed: 118, cancelled: 5, revenue: 420000, commissionEarned: 50400, payable: 121000, responseMins: 12, rating: 4.7, contractEndsOn: daysFromNow(120) },
-    { name: 'Atlantis The Palm', category: 'Hotel', location: 'Dubai', commission: 10, status: 'Active', verification: 'Verified', approval: 'Approved', bookings: 64, confirmed: 58, cancelled: 4, revenue: 380000, commissionEarned: 38000, payable: 186000, responseMins: 34, rating: 4.4, contractEndsOn: daysFromNow(20) },
-    { name: 'Skyline Transfers', category: 'Transport', location: 'Mumbai', commission: 15, status: 'Active', verification: 'Verified', approval: 'Approved', bookings: 42, confirmed: 41, revenue: 84000, commissionEarned: 12600, payable: 18000, responseMins: 5, rating: 4.9, contractEndsOn: daysFromNow(200) },
+    { name: 'Ayana Resort & Spa', phone: '+91 98450 11201', contact: 'Made Wirawan', category: 'Hotel', location: 'Jimbaran, Bali', commission: 12, status: 'Active', verification: 'Verified', approval: 'Approved', bookings: 125, confirmed: 118, cancelled: 5, revenue: 420000, commissionEarned: 50400, payable: 121000, responseMins: 12, rating: 4.7, contractEndsOn: daysFromNow(120) },
+    { name: 'Atlantis The Palm', phone: '+91 98450 11202', contact: 'Sara Haddad', category: 'Hotel', location: 'Dubai', commission: 10, status: 'Active', verification: 'Verified', approval: 'Approved', bookings: 64, confirmed: 58, cancelled: 4, revenue: 380000, commissionEarned: 38000, payable: 186000, responseMins: 34, rating: 4.4, contractEndsOn: daysFromNow(20) },
+    { name: 'Skyline Transfers', phone: '+91 98450 11203', contact: 'Anil Kadam', category: 'Transport', location: 'Mumbai', commission: 15, status: 'Active', verification: 'Verified', approval: 'Approved', bookings: 42, confirmed: 41, revenue: 84000, commissionEarned: 12600, payable: 18000, responseMins: 5, rating: 4.9, contractEndsOn: daysFromNow(200) },
   ];
   const partners = {};
   for (const p of partnerSeed) {

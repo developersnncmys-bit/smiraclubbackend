@@ -38,6 +38,9 @@ router.use('/reports', require('./report.routes'));
 router.use('/revenue', require('./revenue.routes'));
 router.use('/audit-logs', require('./auditLog.routes'));
 
+// Partners sign in here, and only here. See middleware/partnerAuth.js.
+router.use('/partner-portal', require('./partnerPortal.routes'));
+
 /** A map of what is on offer, handy when wiring the panel up later. */
 router.get('/', (req, res) => {
   res.json({
@@ -48,7 +51,7 @@ router.get('/', (req, res) => {
       'membership-plans', 'memberships', 'bookings', 'tickets', 'partners',
       'inventory', 'payments', 'invoices', 'refunds', 'expenses', 'approvals',
       'whatsapp', 'automations', 'rewards', 'referrals', 'offers',
-      'dashboard', 'reports', 'revenue', 'audit-logs',
+      'dashboard', 'reports', 'revenue', 'audit-logs', 'partner-portal',
     ],
   });
 });

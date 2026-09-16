@@ -19,6 +19,8 @@ const partnerSchema = new mongoose.Schema(
 
     contact: String,
     phone: String,
+    /** The last ten digits of `phone`, which is what sign-in looks up. */
+    phoneDigits: { type: String, index: true },
     whatsapp: String,
     email: { type: String, lowercase: true, trim: true },
 
@@ -61,6 +63,16 @@ const partnerSchema = new mongoose.Schema(
 
     activities: [{ at: Date, text: String, _id: false }],
 
+    // -- Signing in to the partner portal ------------------------------------
+    otp: {
+      /** Hashed. The digits themselves are never stored. */
+      codeHash: { type: String, select: false },
+      expiresAt: Date,
+      attempts: { type: Number, default: 0 },
+      lastSentAt: Date,
+    },
+    lastLoginAt: Date,
+
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   },
@@ -68,6 +80,26 @@ const partnerSchema = new mongoose.Schema(
 );
 
 withCode(partnerSchema, 'PTR', { pad: 2, start: 0 });
+
+const digitsOf = (phone) => String(phone || '').replace(/\D/g, '').slice(-10);
+
+partnerSchema.statics.digits = digitsOf;
+
+partnerSchema.pre('save', function keepDigits(next) {
+  if (this.isModified('phone')) this.phoneDigits = digitsOf(this.phone);
+  next();
+});
+
+/** Upserts skip document middleware, and the seed upserts partners. */
+partnerSchema.pre('findOneAndUpdate', function keepDigitsOnUpdate(next) {
+  const update = this.getUpdate() || {};
+  const phone = update.phone ?? update.$set?.phone;
+  if (phone !== undefined) {
+    if (update.$set) update.$set.phoneDigits = digitsOf(phone);
+    else update.phoneDigits = digitsOf(phone);
+  }
+  next();
+});
 
 partnerSchema.index({ name: 'text', location: 'text', contact: 'text' });
 

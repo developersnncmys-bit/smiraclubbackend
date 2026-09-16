@@ -12,6 +12,11 @@ const protect = catchAsync(async (req, res, next) => {
 
   const payload = jwt.verify(token, process.env.JWT_SECRET);
 
+  // A partner's token opens the partner portal and nothing else. Failing to
+  // find a user would refuse it anyway; saying so means that stays true even
+  // if an id ever collides.
+  if (payload.kind === 'partner') throw ApiError.forbidden('Partner accounts cannot open the staff panel');
+
   const user = await User.findById(payload.sub).populate('role');
   if (!user) throw ApiError.unauthorized('That account no longer exists');
   if (user.status !== 'Active') throw ApiError.forbidden('That account has been disabled');
