@@ -33,8 +33,11 @@ function crud(Model, config = {}) {
     res.json({ success: true, ...result });
   });
 
+  /** This record, if this user is allowed to see it. */
+  const mine = (req) => ({ _id: req.params.id, ...scopeFilter(req, ownerField) });
+
   const getOne = catchAsync(async (req, res) => {
-    let q = Model.findById(req.params.id);
+    let q = Model.findOne(mine(req));
     if (populate) q = q.populate(populate);
     const doc = await q;
     if (!doc) throw ApiError.notFound(`${name} not found`);
@@ -57,8 +60,8 @@ function crud(Model, config = {}) {
 
   const update = catchAsync(async (req, res) => {
     const payload = beforeUpdate ? await beforeUpdate(req.body, req) : req.body;
-    const doc = await Model.findByIdAndUpdate(
-      req.params.id,
+    const doc = await Model.findOneAndUpdate(
+      mine(req),
       { ...payload, updatedBy: req.user?._id },
       { new: true, runValidators: true }
     );
@@ -69,7 +72,7 @@ function crud(Model, config = {}) {
   });
 
   const remove = catchAsync(async (req, res) => {
-    const doc = await Model.findByIdAndDelete(req.params.id);
+    const doc = await Model.findOneAndDelete(mine(req));
     if (!doc) throw ApiError.notFound(`${name} not found`);
     await record(req, 'delete', name, doc._id, `Deleted ${doc.code || doc.name || doc._id}`);
     res.json({ success: true, data: { id: req.params.id } });

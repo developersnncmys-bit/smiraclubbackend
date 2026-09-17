@@ -47,6 +47,7 @@ const LEAD_STAGES = [
 ];
 
 const LEAD_SOURCES = [
+  'Facebook',
   'Facebook Ads',
   'Instagram',
   'WhatsApp',
@@ -57,6 +58,8 @@ const LEAD_SOURCES = [
   'Existing member',
   'Campaign',
   'Walk-in',
+  'Calling data',
+  'Partner',
   'Other',
 ];
 

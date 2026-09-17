@@ -4,6 +4,7 @@ const Payment = require('../models/Payment');
 const Customer = require('../models/Customer');
 const ApiError = require('../helpers/ApiError');
 const catchAsync = require('../helpers/catchAsync');
+const { scopeFilter } = require('../middleware/scope');
 const { crud } = require('../helpers/crud');
 const { record } = require('../helpers/audit');
 const { finalAmount } = require('../helpers/money');
@@ -28,6 +29,8 @@ exports.remove = base.remove;
  * plan, and the plan's benefits copied onto the member so they can be spent.
  */
 exports.create = catchAsync(async (req, res) => {
+  if (!req.body.plan) throw ApiError.badRequest('Pick the plan being sold');
+  if (!req.body.customer) throw ApiError.badRequest('Pick the customer buying it');
   const plan = await MembershipPlan.findById(req.body.plan);
   if (!plan) throw ApiError.badRequest('That plan does not exist');
 
@@ -73,7 +76,7 @@ exports.create = catchAsync(async (req, res) => {
 
 /** Sold → payment → documents → activated, one step at a time. */
 exports.activate = catchAsync(async (req, res) => {
-  const membership = await Membership.findById(req.params.id);
+  const membership = await Membership.findOne({ _id: req.params.id, ...scopeFilter(req, 'expert') });
   if (!membership) throw ApiError.notFound('Membership not found');
   if (membership.paid < membership.amount) {
     throw ApiError.badRequest('The fee has not been collected in full yet');
@@ -95,7 +98,7 @@ exports.collect = catchAsync(async (req, res) => {
   const amount = Number(req.body.amount);
   if (!amount || amount <= 0) throw ApiError.badRequest('Say how much has come in');
 
-  const membership = await Membership.findById(req.params.id);
+  const membership = await Membership.findOne({ _id: req.params.id, ...scopeFilter(req, 'expert') });
   if (!membership) throw ApiError.notFound('Membership not found');
 
   membership.paid = Number(membership.paid || 0) + amount;
@@ -125,7 +128,7 @@ exports.collect = catchAsync(async (req, res) => {
 
 /** Renewing rolls the expiry forward and files the old term as history. */
 exports.renew = catchAsync(async (req, res) => {
-  const membership = await Membership.findById(req.params.id).populate('plan');
+  const membership = await Membership.findOne({ _id: req.params.id, ...scopeFilter(req, 'expert') }).populate('plan');
   if (!membership) throw ApiError.notFound('Membership not found');
 
   const months = membership.plan?.durationMonths || 12;
@@ -149,7 +152,7 @@ exports.renew = catchAsync(async (req, res) => {
 /** Spending a free night, or any other benefit the plan carries. */
 exports.useBenefit = catchAsync(async (req, res) => {
   const { name, units = 1 } = req.body;
-  const membership = await Membership.findById(req.params.id);
+  const membership = await Membership.findOne({ _id: req.params.id, ...scopeFilter(req, 'expert') });
   if (!membership) throw ApiError.notFound('Membership not found');
 
   const benefit = membership.benefits.find((b) => b.name === name);

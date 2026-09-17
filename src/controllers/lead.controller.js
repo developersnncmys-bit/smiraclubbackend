@@ -3,6 +3,8 @@ const Customer = require('../models/Customer');
 const Task = require('../models/Task');
 const ApiError = require('../helpers/ApiError');
 const catchAsync = require('../helpers/catchAsync');
+const User = require('../models/User');
+const { scopeFilter } = require('../middleware/scope');
 const { crud } = require('../helpers/crud');
 const { record } = require('../helpers/audit');
 const { LEAD_STAGES } = require('../config/constants');
@@ -26,7 +28,7 @@ exports.moveStage = catchAsync(async (req, res) => {
   if (!LEAD_STAGES.includes(status)) throw ApiError.badRequest(`status has to be one of: ${LEAD_STAGES.join(', ')}`);
   if (status === 'Lost' && !lostReason) throw ApiError.badRequest('A lost lead needs a reason');
 
-  const lead = await Lead.findById(req.params.id);
+  const lead = await Lead.findOne({ _id: req.params.id, ...scopeFilter(req, 'owner') });
   if (!lead) throw ApiError.notFound('Lead not found');
 
   const from = lead.status;
@@ -49,8 +51,8 @@ exports.addActivity = catchAsync(async (req, res) => {
   const { kind = 'note', text } = req.body;
   if (!text) throw ApiError.badRequest('Say what happened');
 
-  const lead = await Lead.findByIdAndUpdate(
-    req.params.id,
+  const lead = await Lead.findOneAndUpdate(
+    { _id: req.params.id, ...scopeFilter(req, 'owner') },
     {
       $push: { activities: { kind, text, by: req.user._id, byName: req.user.name } },
       lastContactAt: new Date(),
@@ -68,8 +70,12 @@ exports.assign = catchAsync(async (req, res) => {
   const list = ids.length ? ids : [req.params.id].filter(Boolean);
   if (!list.length) throw ApiError.badRequest('Pick at least one lead');
 
+  // Handing work to somebody who does not exist would orphan it.
+  const target = await User.findById(owner).select('_id');
+  if (!target) throw ApiError.badRequest('That team member does not exist');
+
   const result = await Lead.updateMany(
-    { _id: { $in: list } },
+    { _id: { $in: list }, ...scopeFilter(req, 'owner') },
     { owner, $push: { activities: { kind: 'status', text: 'Reassigned', byName: req.user.name } } }
   );
 
@@ -79,7 +85,7 @@ exports.assign = catchAsync(async (req, res) => {
 
 /** Won means a member exists — so make one if there is not already. */
 exports.convert = catchAsync(async (req, res) => {
-  const lead = await Lead.findById(req.params.id);
+  const lead = await Lead.findOne({ _id: req.params.id, ...scopeFilter(req, 'owner') });
   if (!lead) throw ApiError.notFound('Lead not found');
   if (lead.convertedCustomer) throw ApiError.conflict('That lead is already a member');
 

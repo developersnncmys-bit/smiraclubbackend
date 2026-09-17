@@ -3,6 +3,7 @@ const Customer = require('../models/Customer');
 const InventoryItem = require('../models/InventoryItem');
 const ApiError = require('../helpers/ApiError');
 const catchAsync = require('../helpers/catchAsync');
+const { scopeFilter } = require('../middleware/scope');
 const { crud } = require('../helpers/crud');
 const { record } = require('../helpers/audit');
 
@@ -23,6 +24,7 @@ exports.remove = base.remove;
 
 /** Taking a booking also takes the units out of stock. */
 exports.create = catchAsync(async (req, res) => {
+  if (!req.body.customer) throw ApiError.badRequest('Pick the customer this booking is for');
   const customer = await Customer.findById(req.body.customer);
   if (!customer) throw ApiError.badRequest('That customer does not exist');
 
@@ -43,8 +45,8 @@ exports.create = catchAsync(async (req, res) => {
 });
 
 exports.confirm = catchAsync(async (req, res) => {
-  const booking = await Booking.findByIdAndUpdate(
-    req.params.id,
+  const booking = await Booking.findOneAndUpdate(
+    { _id: req.params.id, ...scopeFilter(req, 'owner') },
     {
       status: 'Confirmed',
       'confirmation.status': 'Hotel confirmed',
@@ -65,7 +67,7 @@ exports.cancel = catchAsync(async (req, res) => {
   const { reason, by = 'Customer', refund = 0 } = req.body;
   if (!reason) throw ApiError.badRequest('A cancellation needs a reason');
 
-  const booking = await Booking.findById(req.params.id);
+  const booking = await Booking.findOne({ _id: req.params.id, ...scopeFilter(req, 'owner') });
   if (!booking) throw ApiError.notFound('Booking not found');
   if (booking.status === 'Cancelled') throw ApiError.conflict('That booking is already cancelled');
 
@@ -90,8 +92,8 @@ exports.reschedule = catchAsync(async (req, res) => {
   const { checkIn, checkOut, note } = req.body;
   if (!checkIn) throw ApiError.badRequest('A new check-in date is needed');
 
-  const booking = await Booking.findByIdAndUpdate(
-    req.params.id,
+  const booking = await Booking.findOneAndUpdate(
+    { _id: req.params.id, ...scopeFilter(req, 'owner') },
     {
       checkIn,
       checkOut,

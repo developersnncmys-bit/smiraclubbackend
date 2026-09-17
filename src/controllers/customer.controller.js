@@ -6,6 +6,7 @@ const Invoice = require('../models/Invoice');
 const Reward = require('../models/Reward');
 const ApiError = require('../helpers/ApiError');
 const catchAsync = require('../helpers/catchAsync');
+const { scopeFilter } = require('../middleware/scope');
 const { crud } = require('../helpers/crud');
 
 const base = crud(Customer, {
@@ -22,7 +23,7 @@ exports.remove = base.remove;
 
 /** One member, with everything hanging off them in one call. */
 exports.getOne = catchAsync(async (req, res) => {
-  const customer = await Customer.findById(req.params.id).populate('expert', 'name code');
+  const customer = await Customer.findOne({ _id: req.params.id, ...scopeFilter(req, 'expert') }).populate('expert', 'name code');
   if (!customer) throw ApiError.notFound('Customer not found');
 
   const [bookings, memberships, tickets, invoices, rewards] = await Promise.all([
@@ -41,7 +42,7 @@ exports.getOne = catchAsync(async (req, res) => {
  * worked out rather than stored.
  */
 exports.money = catchAsync(async (req, res) => {
-  const customer = await Customer.findById(req.params.id);
+  const customer = await Customer.findOne({ _id: req.params.id, ...scopeFilter(req, 'expert') });
   if (!customer) throw ApiError.notFound('Customer not found');
 
   const [invoices, memberships] = await Promise.all([
