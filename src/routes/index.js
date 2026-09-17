@@ -41,6 +41,9 @@ router.use('/audit-logs', require('./auditLog.routes'));
 // Partners sign in here, and only here. See middleware/partnerAuth.js.
 router.use('/partner-portal', require('./partnerPortal.routes'));
 
+// What the public website sends in, with nobody signed in.
+router.use('/website', require('./website.routes'));
+
 /** A map of what is on offer, handy when wiring the panel up later. */
 router.get('/', (req, res) => {
   res.json({
@@ -51,7 +54,7 @@ router.get('/', (req, res) => {
       'membership-plans', 'memberships', 'bookings', 'tickets', 'partners',
       'inventory', 'payments', 'invoices', 'refunds', 'expenses', 'approvals',
       'whatsapp', 'automations', 'rewards', 'referrals', 'offers',
-      'dashboard', 'reports', 'revenue', 'audit-logs', 'partner-portal',
+      'dashboard', 'reports', 'revenue', 'audit-logs', 'partner-portal', 'website',
     ],
   });
 });
