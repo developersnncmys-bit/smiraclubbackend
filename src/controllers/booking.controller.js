@@ -39,6 +39,10 @@ exports.create = catchAsync(async (req, res) => {
   if (booking.inventory) {
     await InventoryItem.findByIdAndUpdate(booking.inventory, { $inc: { booked: booking.rooms || 1 } });
   }
+  await booking.populate([
+    { path: 'owner', select: 'name code' },
+    { path: 'customer', select: 'name phone tier' },
+  ]);
 
   await record(req, 'create', 'Booking', booking._id, `${booking.code} for ${customer.name}`);
   res.status(201).json({ success: true, data: booking });

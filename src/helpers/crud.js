@@ -54,6 +54,8 @@ function crud(Model, config = {}) {
 
     const doc = await Model.create({ ...payload, ...owned, createdBy: req.user?._id });
     if (afterCreate) await afterCreate(doc, req);
+    // Named like a list names them, or the screen shows an id until a reload.
+    if (populate) await doc.populate(populate);
     await record(req, 'create', name, doc._id, `Created ${doc.code || doc.name || doc._id}`);
     res.status(201).json({ success: true, data: doc });
   });
@@ -63,7 +65,7 @@ function crud(Model, config = {}) {
     const doc = await Model.findOneAndUpdate(
       mine(req),
       { ...payload, updatedBy: req.user?._id },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true, ...(populate ? { populate } : {}) }
     );
     if (!doc) throw ApiError.notFound(`${name} not found`);
     if (afterUpdate) await afterUpdate(doc, req);

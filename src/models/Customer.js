@@ -18,6 +18,8 @@ const customerSchema = new mongoose.Schema(
     family: [{ name: String, relation: String, dob: Date }],
     dob: Date,
     anniversary: Date,
+    /** What the special date is — "Anniversary", "Spouse birthday", "Other". */
+    specialLabel: { type: String, trim: true, maxlength: 40 },
     childBirthday: Date,
 
     source: String,

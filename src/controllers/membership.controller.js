@@ -70,6 +70,11 @@ exports.create = catchAsync(async (req, res) => {
     createdBy: req.user._id,
   });
 
+  await membership.populate([
+    { path: 'expert', select: 'name code' },
+    { path: 'plan', select: 'name price durationMonths freeStay' },
+  ]);
+
   await record(req, 'create', 'Membership', membership._id, `${membership.code} · ${plan.name} · net ${net}`);
   res.status(201).json({ success: true, data: membership });
 });
