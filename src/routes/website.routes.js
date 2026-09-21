@@ -11,7 +11,7 @@ const c = require('../controllers/website.controller');
  */
 const perAddress = rateLimit({
   windowMs: 60 * 60 * 1000,
-  limit: 10,
+  limit: 20,
   message: { success: false, message: 'That is a lot of enquiries — try again later, or call us' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -19,7 +19,7 @@ const perAddress = rateLimit({
 
 const perPhone = rateLimit({
   windowMs: 60 * 60 * 1000,
-  limit: 4,
+  limit: 10,
   keyGenerator: (req) => `trip:${String(req.body?.phone || '').replace(/\D/g, '').slice(-10) || req.ip}`,
   message: { success: false, message: 'We already have your enquiries — our travel desk will call you shortly' },
   standardHeaders: true,
@@ -29,5 +29,6 @@ const perPhone = rateLimit({
 
 router.post('/trip-enquiry', perAddress, perPhone, c.tripEnquiry);
 router.post('/package-booking', perAddress, perPhone, c.packageBooking);
+router.post('/booking', perAddress, perPhone, c.booking);
 
 module.exports = router;

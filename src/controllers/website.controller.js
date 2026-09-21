@@ -199,9 +199,15 @@ exports.packageBooking = catchAsync(async (req, res) => {
     b.coupon ? `Coupon typed: ${text(b.coupon, 30)}` : '',
   ].filter(Boolean);
 
+  const lead = await leadForBooking({
+    name, phone, email, destination, pax: adults + children, travelDate: departure,
+    label: 'Package', what: packageName, note, owner,
+  });
+
   const booking = await Booking.create({
     customer: customer._id,
     customerName: customer.name,
+    lead: lead._id,
     bookingType: 'International trip',
     packageName,
     destination,
@@ -221,6 +227,136 @@ exports.packageBooking = catchAsync(async (req, res) => {
     handledBy: { handled: owner },
     activities: note.map((line) => ({ kind: 'note', text: line, byName: 'Website' })),
   });
+
+  await linkLead(lead, booking);
+
+  res.status(201).json({
+    success: true,
+    message: 'Booking requested',
+    data: { reference: booking.code },
+  });
+});
+
+/**
+ * The lead a website booking opens in Sales & Leads.
+ *
+ * A booking from the website is unpaid until the desk calls, so it is also
+ * work for sales: the lead is what puts the callback in someone's queue, and
+ * it carries the booking's code so the two are found from either side.
+ */
+async function leadForBooking({ name, phone, email, destination, pax, travelDate, label, what, note, owner }) {
+  return Lead.create({
+    name,
+    phone: `+91 ${phone.slice(0, 5)} ${phone.slice(5)}`,
+    email: email || undefined,
+    destination: destination || what,
+    pax,
+    travelDate,
+    source: 'Website',
+    label,
+    tags: ['Website booking', label],
+    notes: note.join('\n'),
+    status: 'New',
+    score: 'Hot',
+    priority: 'High',
+    owner,
+    activities: note.map((line) => ({ kind: 'note', text: line, byName: 'Website' })),
+  });
+}
+
+async function linkLead(lead, booking) {
+  lead.notes = `Booking ${booking.code} — pending, confirm and take payment\n${lead.notes}`;
+  lead.activities.push({ kind: 'note', text: `Booking ${booking.code} opened on the Booking page`, byName: 'Website' });
+  await lead.save();
+}
+
+/** What each website booking screen is on the Booking page. */
+const KIND_TYPE = {
+  stay: 'Hotel', hotel: 'Hotel', hourly: 'Hotel', 'free-stay': 'Hotel',
+  villa: 'Villa',
+  table: 'Restaurant',
+  park: 'Activity', spa: 'Activity', luxury: 'Activity', adventure: 'Activity', camping: 'Activity', activity: 'Activity',
+  package: 'Package', group: 'Package',
+};
+const KIND_LABEL = {
+  stay: 'Hotel', hotel: 'Hotel', hourly: 'Hourly stay', 'free-stay': 'Free stay', villa: 'Villa',
+  table: 'Restaurant', park: 'Theme park', spa: 'Spa & salon', luxury: 'Luxury experience',
+  adventure: 'Adventure', camping: 'Camping', activity: 'Activity', package: 'Package', group: 'Group departure',
+};
+
+/**
+ * Any other booking made on the website — a hotel, villa, free stay, table,
+ * park ticket, spa slot and the rest.
+ *
+ * Those screens are priced from the website's own listings, so like a package
+ * the booking lands pending with the website's quote on its trail, plus a lead
+ * so sales calls back. The date arrives as the words the screen showed, since
+ * each screen words its slot differently; it is kept verbatim on the trail.
+ */
+exports.booking = catchAsync(async (req, res) => {
+  const b = req.body || {};
+
+  const name = text(b.name, 80);
+  const phone = String(b.phone || '').replace(/\D/g, '').slice(-10);
+  const email = text(b.email, 120).toLowerCase();
+  const kind = Object.prototype.hasOwnProperty.call(KIND_TYPE, b.kind) ? b.kind : 'stay';
+  const what = text(b.itemName, 120);
+  const location = text(b.location, 120);
+  const slot = text(b.slot, 80);
+  const nights = text(b.nights, 60);
+
+  if (name.length < 2) throw ApiError.badRequest('Tell us who is booking');
+  if (!/^[6-9]\d{9}$/.test(phone)) throw ApiError.badRequest('Enter a 10-digit mobile number');
+  if (email && !/^\S+@\S+\.\S+$/.test(email)) throw ApiError.badRequest('That email does not look right');
+  if (!what) throw ApiError.badRequest('What is this booking for?');
+
+  const guestCount = count(b.pax, 1, 50);
+  const amount = count(b.total, 0, 50000000);
+  const gstin = text(b.gstin, 20).toUpperCase();
+  const guests = (Array.isArray(b.guests) ? b.guests : [])
+    .slice(0, 20)
+    .map((g) => [text(g?.name, 80), text(g?.email, 120), String(g?.phone || '').replace(/\D/g, '').slice(-10)].filter(Boolean).join(' · '))
+    .filter(Boolean);
+  const label = KIND_LABEL[kind];
+
+  const note = [
+    `Booked on the website — ${label}: ${what}`,
+    location ? `Location: ${location}` : '',
+    slot ? `When: ${slot}${nights ? ` · ${nights}` : ''}` : '',
+    `Quoted on the website: ₹${amount.toLocaleString('en-IN')} incl. taxes — confirm the price when you call`,
+    guests.length > 1 ? `Guests: ${guests.join('; ')}` : '',
+    gstin ? `GST invoice to ${gstin}` : '',
+    b.coupon ? `Coupon typed: ${text(b.coupon, 30)}` : '',
+  ].filter(Boolean);
+
+  const owner = await pickDeskOwner();
+  const customer = await customerFor({ name, phone, email }, owner);
+  const lead = await leadForBooking({
+    name, phone, email, destination: location, pax: guestCount, label, what, note, owner,
+  });
+
+  const type = KIND_TYPE[kind];
+  const booking = await Booking.create({
+    customer: customer._id,
+    customerName: customer.name,
+    lead: lead._id,
+    bookingType: type,
+    ...(type === 'Hotel' || type === 'Villa' ? { hotel: what } : { packageName: what }),
+    destination: location || undefined,
+    pax: guestCount,
+    adults: guestCount,
+    amount,
+    paid: 0,
+    status: 'Pending',
+    source: 'Website',
+    channel: 'Website',
+    owner,
+    specialNote: gstin ? `GST: ${gstin}` : undefined,
+    handledBy: { handled: owner },
+    activities: note.map((line) => ({ kind: 'note', text: line, byName: 'Website' })),
+  });
+
+  await linkLead(lead, booking);
 
   res.status(201).json({
     success: true,
