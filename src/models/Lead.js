@@ -31,6 +31,8 @@ const leadSchema = new mongoose.Schema(
     budget: { type: Number, default: 0 },
 
     status: { type: String, enum: LEAD_STAGES, default: 'New', index: true },
+    /** The campaign that brought it in, by name — for leads and sales by campaign. */
+    campaign: { type: String, trim: true, maxlength: 80 },
     source: { type: String, enum: LEAD_SOURCES, default: 'Website' },
     score: { type: String, enum: LEAD_SCORES, default: 'Warm' },
     priority: { type: String, enum: ['High', 'Medium', 'Low'], default: 'Medium' },

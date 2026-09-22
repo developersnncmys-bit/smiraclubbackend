@@ -51,6 +51,24 @@ const day = (v) => {
 };
 
 /**
+ * Where a visitor came from, read off the campaign link they arrived on
+ * (utm_source / utm_campaign). An ad or WhatsApp broadcast link carries these,
+ * so its enquiries land in Sales & Leads under that source and campaign
+ * rather than as plain website traffic.
+ */
+function attribution(a) {
+  const src = text(a?.source, 40).toLowerCase();
+  const campaign = text(a?.campaign, 80) || undefined;
+  let source = 'Website';
+  if (/whatsapp|^wa$/.test(src)) source = 'WhatsApp';
+  else if (/facebook|^fb$|meta/.test(src)) source = 'Facebook Ads';
+  else if (/instagram|^ig$/.test(src)) source = 'Instagram';
+  else if (/google|adwords/.test(src)) source = 'Google Ads';
+  else if (campaign || src) source = 'Campaign';
+  return { source, campaign };
+}
+
+/**
  * A customised international tour, asked for on the website.
  *
  * It lands in Sales & Leads as a new lead, because that is what it is: a
@@ -111,7 +129,7 @@ exports.tripEnquiry = catchAsync(async (req, res) => {
     destination,
     pax: adults + childAges.length,
     travelDate: checkIn,
-    source: 'Website',
+    ...attribution(b.attribution),
     label: 'International',
     tags: ['International', 'Customised tour'],
     notes: brief,
@@ -131,12 +149,42 @@ exports.tripEnquiry = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * What the member filled in on Complete Your Profile, read field by field.
+ * Only the gaps on a customer are filled from it — the desk's own record wins.
+ */
+function profileFields(p) {
+  if (!p || typeof p !== 'object') return {};
+  const past = (d) => (d && d < new Date() ? d : undefined);
+  const where = [text(p.address, 200), text(p.state, 40), text(p.pincode, 10)].filter(Boolean).join(', ');
+  const out = {
+    dob: past(day(p.dob)),
+    anniversary: past(day(p.anniversary)),
+    address: where || undefined,
+    city: text(p.city, 60) || undefined,
+  };
+  if (out.anniversary) out.specialLabel = 'Anniversary';
+  return Object.fromEntries(Object.entries(out).filter(([, v]) => v !== undefined));
+}
+
 /** The customer a website booking belongs to — found by number, or made. */
-async function customerFor({ name, phone, email }, expert) {
+async function customerFor({ name, phone, email, profile }, expert) {
+  const extra = profileFields(profile);
+
   // Stored numbers carry spaces and a +91, so match on the digits in order.
   const digitsInOrder = new RegExp(`${phone.split('').join('\\D*')}$`);
   const known = await Customer.findOne({ phone: digitsInOrder });
-  if (known) return known;
+  if (known) {
+    let changed = false;
+    for (const [k, v] of Object.entries({ email: email || undefined, ...extra })) {
+      if (v !== undefined && !known[k]) {
+        known[k] = v;
+        changed = true;
+      }
+    }
+    if (changed) await known.save();
+    return known;
+  }
 
   return Customer.create({
     name,
@@ -144,6 +192,7 @@ async function customerFor({ name, phone, email }, expert) {
     email: email || undefined,
     source: 'Website',
     expert,
+    ...extra,
   });
 }
 
@@ -187,9 +236,11 @@ exports.packageBooking = catchAsync(async (req, res) => {
     .filter(Boolean);
 
   const owner = await pickDeskOwner();
-  const customer = await customerFor({ name, phone, email }, owner);
+  const customer = await customerFor({ name, phone, email, profile: b.profile }, owner);
 
+  const from = attribution(b.attribution);
   const note = [
+    from.source !== 'Website' ? `Came from ${from.source}${from.campaign ? ` — campaign "${from.campaign}"` : ''}` : '',
     `Booked on the website — ${packageName}`,
     `Departure ${departure.toDateString()}, ${nights} night${nights === 1 ? '' : 's'}`,
     `${adults} adult${adults === 1 ? '' : 's'}${children ? `, ${children} child${children === 1 ? '' : 'ren'}` : ''}`,
@@ -199,15 +250,9 @@ exports.packageBooking = catchAsync(async (req, res) => {
     b.coupon ? `Coupon typed: ${text(b.coupon, 30)}` : '',
   ].filter(Boolean);
 
-  const lead = await leadForBooking({
-    name, phone, email, destination, pax: adults + children, travelDate: departure,
-    label: 'Package', what: packageName, note, owner,
-  });
-
   const booking = await Booking.create({
     customer: customer._id,
     customerName: customer.name,
-    lead: lead._id,
     bookingType: 'International trip',
     packageName,
     destination,
@@ -220,7 +265,7 @@ exports.packageBooking = catchAsync(async (req, res) => {
     paid: 0,
     // Not the visitor's to decide.
     status: 'Pending',
-    source: 'Website',
+    source: from.source,
     channel: 'Website',
     owner,
     specialNote: gstin ? `GST: ${gstin}` : undefined,
@@ -228,47 +273,12 @@ exports.packageBooking = catchAsync(async (req, res) => {
     activities: note.map((line) => ({ kind: 'note', text: line, byName: 'Website' })),
   });
 
-  await linkLead(lead, booking);
-
   res.status(201).json({
     success: true,
     message: 'Booking requested',
     data: { reference: booking.code },
   });
 });
-
-/**
- * The lead a website booking opens in Sales & Leads.
- *
- * A booking from the website is unpaid until the desk calls, so it is also
- * work for sales: the lead is what puts the callback in someone's queue, and
- * it carries the booking's code so the two are found from either side.
- */
-async function leadForBooking({ name, phone, email, destination, pax, travelDate, label, what, note, owner }) {
-  return Lead.create({
-    name,
-    phone: `+91 ${phone.slice(0, 5)} ${phone.slice(5)}`,
-    email: email || undefined,
-    destination: destination || what,
-    pax,
-    travelDate,
-    source: 'Website',
-    label,
-    tags: ['Website booking', label],
-    notes: note.join('\n'),
-    status: 'New',
-    score: 'Hot',
-    priority: 'High',
-    owner,
-    activities: note.map((line) => ({ kind: 'note', text: line, byName: 'Website' })),
-  });
-}
-
-async function linkLead(lead, booking) {
-  lead.notes = `Booking ${booking.code} — pending, confirm and take payment\n${lead.notes}`;
-  lead.activities.push({ kind: 'note', text: `Booking ${booking.code} opened on the Booking page`, byName: 'Website' });
-  await lead.save();
-}
 
 /** What each website booking screen is on the Booking page. */
 const KIND_TYPE = {
@@ -288,10 +298,11 @@ const KIND_LABEL = {
  * Any other booking made on the website — a hotel, villa, free stay, table,
  * park ticket, spa slot and the rest.
  *
- * Those screens are priced from the website's own listings, so like a package
- * the booking lands pending with the website's quote on its trail, plus a lead
- * so sales calls back. The date arrives as the words the screen showed, since
- * each screen words its slot differently; it is kept verbatim on the trail.
+ * It lands on the Booking page, pending, with the website's quote on its
+ * trail for the desk to confirm when they call. Sales & Leads is kept for
+ * leads from campaigns, WhatsApp and the like, so a website booking does not
+ * open one. Check-in and check-out arrive as yyyy-mm-dd; the screen's own
+ * wording of the slot is kept on the trail as well.
  */
 exports.booking = catchAsync(async (req, res) => {
   const b = req.body || {};
@@ -303,13 +314,18 @@ exports.booking = catchAsync(async (req, res) => {
   const what = text(b.itemName, 120);
   const location = text(b.location, 120);
   const slot = text(b.slot, 80);
-  const nights = text(b.nights, 60);
+  const nightsText = text(b.nights, 60);
+  const checkIn = day(b.checkIn);
+  const checkOut = day(b.checkOut);
 
   if (name.length < 2) throw ApiError.badRequest('Tell us who is booking');
   if (!/^[6-9]\d{9}$/.test(phone)) throw ApiError.badRequest('Enter a 10-digit mobile number');
   if (email && !/^\S+@\S+\.\S+$/.test(email)) throw ApiError.badRequest('That email does not look right');
   if (!what) throw ApiError.badRequest('What is this booking for?');
+  if (checkIn && checkIn < new Date(Date.now() - 86400000)) throw ApiError.badRequest('That date has already gone');
+  if (checkIn && checkOut && checkOut <= checkIn) throw ApiError.badRequest('Check-out has to be after check-in');
 
+  const nights = checkIn && checkOut ? Math.round((checkOut - checkIn) / 86400000) : undefined;
   const guestCount = count(b.pax, 1, 50);
   const amount = count(b.total, 0, 50000000);
   const gstin = text(b.gstin, 20).toUpperCase();
@@ -318,11 +334,15 @@ exports.booking = catchAsync(async (req, res) => {
     .map((g) => [text(g?.name, 80), text(g?.email, 120), String(g?.phone || '').replace(/\D/g, '').slice(-10)].filter(Boolean).join(' · '))
     .filter(Boolean);
   const label = KIND_LABEL[kind];
+  const show = (d) => d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
 
+  const from = attribution(b.attribution);
   const note = [
+    from.source !== 'Website' ? `Came from ${from.source}${from.campaign ? ` — campaign "${from.campaign}"` : ''}` : '',
     `Booked on the website — ${label}: ${what}`,
     location ? `Location: ${location}` : '',
-    slot ? `When: ${slot}${nights ? ` · ${nights}` : ''}` : '',
+    checkIn ? `Check-in ${show(checkIn)}${checkOut ? ` · Check-out ${show(checkOut)}` : ''}` : '',
+    slot ? `When: ${slot}${nightsText ? ` · ${nightsText}` : ''}` : '',
     `Quoted on the website: ₹${amount.toLocaleString('en-IN')} incl. taxes — confirm the price when you call`,
     guests.length > 1 ? `Guests: ${guests.join('; ')}` : '',
     gstin ? `GST invoice to ${gstin}` : '',
@@ -330,33 +350,31 @@ exports.booking = catchAsync(async (req, res) => {
   ].filter(Boolean);
 
   const owner = await pickDeskOwner();
-  const customer = await customerFor({ name, phone, email }, owner);
-  const lead = await leadForBooking({
-    name, phone, email, destination: location, pax: guestCount, label, what, note, owner,
-  });
+  const customer = await customerFor({ name, phone, email, profile: b.profile }, owner);
 
   const type = KIND_TYPE[kind];
   const booking = await Booking.create({
     customer: customer._id,
     customerName: customer.name,
-    lead: lead._id,
     bookingType: type,
     ...(type === 'Hotel' || type === 'Villa' ? { hotel: what } : { packageName: what }),
     destination: location || undefined,
+    checkIn,
+    checkOut,
+    departureOn: checkIn,
+    nights,
     pax: guestCount,
     adults: guestCount,
     amount,
     paid: 0,
     status: 'Pending',
-    source: 'Website',
+    source: from.source,
     channel: 'Website',
     owner,
     specialNote: gstin ? `GST: ${gstin}` : undefined,
     handledBy: { handled: owner },
     activities: note.map((line) => ({ kind: 'note', text: line, byName: 'Website' })),
   });
-
-  await linkLead(lead, booking);
 
   res.status(201).json({
     success: true,
