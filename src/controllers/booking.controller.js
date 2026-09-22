@@ -1,11 +1,53 @@
 const Booking = require('../models/Booking');
 const Customer = require('../models/Customer');
 const InventoryItem = require('../models/InventoryItem');
+const Partner = require('../models/Partner');
 const ApiError = require('../helpers/ApiError');
 const catchAsync = require('../helpers/catchAsync');
 const { scopeFilter } = require('../middleware/scope');
 const { crud } = require('../helpers/crud');
 const { record } = require('../helpers/audit');
+
+const escape = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * The partner who runs what a booking is for — the one it was already sent
+ * to, or else the partner whose name, listed property or stock carries the
+ * hotel or package name on the booking.
+ */
+async function partnerFor(booking) {
+  if (booking.vendor) return Partner.findById(booking.vendor);
+  const names = [booking.hotel, booking.packageName, booking.vendorName].map((n) => String(n || '').trim()).filter(Boolean);
+  for (const n of names) {
+    const exact = new RegExp(`^${escape(n)}$`, 'i');
+    const found = await Partner.findOne({ $or: [{ name: exact }, { 'listing.property.name': exact }] });
+    if (found) return found;
+    const item = await InventoryItem.findOne({ name: exact, partner: { $ne: null } }).select('partner');
+    if (item) return Partner.findById(item.partner);
+  }
+  return null;
+}
+
+/**
+ * A confirmed booking goes to its partner: it is linked to them, so it shows
+ * on their portal waiting for them to accept, and the trail says so. With no
+ * partner to be found the trail says that instead, for the desk to pick one.
+ */
+async function sendToPartner(booking, byName) {
+  const partner = await partnerFor(booking);
+  if (!partner) {
+    booking.activities.push({ kind: 'note', text: 'Confirmed — no partner is linked to this hotel yet; choose one to send it', byName });
+    await booking.save();
+    return booking;
+  }
+  const answered = /by partner/i.test(booking.confirmation?.status || '');
+  booking.vendor = partner._id;
+  booking.vendorName = partner.listing?.property?.name || partner.name;
+  if (!answered) booking.set('confirmation.status', 'Sent to partner');
+  booking.activities.push({ kind: 'status', text: `Sent to ${partner.name} to accept`, byName });
+  await booking.save();
+  return booking;
+}
 
 const base = crud(Booking, {
   name: 'Booking',
@@ -15,6 +57,12 @@ const base = crud(Booking, {
     { path: 'customer', select: 'name phone tier' },
   ],
   ownerField: 'owner',
+  // Confirming a booking (or pointing a confirmed one at a partner) sends it on.
+  afterUpdate: async (doc, req) => {
+    const confirmedNow = req.body?.status === 'Confirmed';
+    const repointed = req.body?.vendor !== undefined && doc.status === 'Confirmed';
+    if (confirmedNow || repointed) await sendToPartner(doc, req.user?.name || 'Desk');
+  },
 });
 
 exports.list = base.list;
@@ -62,6 +110,7 @@ exports.confirm = catchAsync(async (req, res) => {
     { new: true }
   );
   if (!booking) throw ApiError.notFound('Booking not found');
+  await sendToPartner(booking, req.user.name);
   await record(req, 'update', 'Booking', booking._id, `${booking.code} confirmed`);
   res.json({ success: true, data: booking });
 });

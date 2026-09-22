@@ -365,7 +365,8 @@ exports.dashboard = catchAsync(async (req, res) => {
   const me = req.partner;
 
   const [bookings, stock, tickets] = await Promise.all([
-    Booking.find({ vendor: me._id }).sort({ checkIn: 1 }).limit(200).lean(),
+    // A booking reaches its partner once the desk has confirmed it; until then it is the desk's.
+    Booking.find({ vendor: me._id, status: { $ne: 'Pending' } }).sort({ checkIn: 1 }).limit(200).lean(),
     InventoryItem.find({ partner: me._id }).lean(),
     Ticket.find({ partner: me._id }).sort({ createdAt: -1 }).limit(50).lean(),
   ]);
@@ -435,7 +436,7 @@ const answer = (accepted) =>
   catchAsync(async (req, res) => {
     if (!isLive(req.partner)) throw ApiError.forbidden('Your listing is not live yet');
 
-    const booking = await Booking.findOne({ _id: req.params.id, vendor: req.partner._id });
+    const booking = await Booking.findOne({ _id: req.params.id, vendor: req.partner._id, status: { $ne: 'Pending' } });
     if (!booking) throw ApiError.notFound('That booking is not one of yours');
     if (booking.status === 'Cancelled') throw ApiError.badRequest('That booking has been cancelled');
 
