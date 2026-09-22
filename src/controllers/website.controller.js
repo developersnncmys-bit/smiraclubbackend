@@ -2,6 +2,8 @@ const Lead = require('../models/Lead');
 const Booking = require('../models/Booking');
 const Customer = require('../models/Customer');
 const User = require('../models/User');
+const Membership = require('../models/Membership');
+const MembershipPlan = require('../models/MembershipPlan');
 const ApiError = require('../helpers/ApiError');
 const catchAsync = require('../helpers/catchAsync');
 
@@ -380,5 +382,78 @@ exports.booking = catchAsync(async (req, res) => {
     success: true,
     message: 'Booking requested',
     data: { reference: booking.code },
+  });
+});
+
+/**
+ * A membership bought on the website.
+ *
+ * There is no payment gateway yet, so Pay now sends the choice to the desk: it
+ * lands on the Members page as a new membership with the payment pending, for
+ * the member's expert to call, take the fee and activate. The website plans
+ * are matched to the desk's plans by name; one the desk does not sell yet goes
+ * on the nearest plan, with what was asked for written on it.
+ */
+exports.membership = catchAsync(async (req, res) => {
+  const b = req.body || {};
+
+  const name = text(b.name, 80);
+  const phone = String(b.phone || '').replace(/\D/g, '').slice(-10);
+  const email = text(b.email, 120).toLowerCase();
+  const wanted = text(b.plan, 40);
+
+  if (name.length < 2) throw ApiError.badRequest('Complete your profile first — we need your name');
+  if (!/^[6-9]\d{9}$/.test(phone)) throw ApiError.badRequest('Enter a 10-digit mobile number');
+  if (email && !/^\S+@\S+\.\S+$/.test(email)) throw ApiError.badRequest('That email does not look right');
+  if (!wanted) throw ApiError.badRequest('Pick a plan');
+
+  const plans = await MembershipPlan.find().sort({ price: 1 }).lean();
+  if (!plans.length) throw ApiError.badRequest('Memberships are not on sale just now — please call us');
+  const first = wanted.split(/\s+/)[0].toLowerCase();
+  const plan = plans.find((p) => p.name.toLowerCase().startsWith(first)) || plans[plans.length - 1];
+
+  const amount = count(b.total, 0, 5000000);
+  const from = attribution(b.attribution);
+  const owner = await pickDeskOwner();
+  const customer = await customerFor({ name, phone, email, profile: b.profile }, owner);
+  const months = plan.durationMonths || 12;
+  const expires = new Date();
+  expires.setMonth(expires.getMonth() + months);
+
+  const lines = [
+    `Bought on the website — ${wanted} membership`,
+    plan.name.toLowerCase().startsWith(first) ? '' : `The desk has no ${wanted} plan yet — put on ${plan.name}, check with the member`,
+    `Quoted on the website: ₹${amount.toLocaleString('en-IN')} incl. taxes — take payment to activate`,
+    list(b.gifts).length ? `Welcome gift: ${list(b.gifts).join(', ')}` : '',
+    list(b.privileges).length ? `Privileges: ${list(b.privileges).join(', ')}` : '',
+    b.sharing ? 'Wants membership sharing' : '',
+    b.coupon ? `Coupon: ${text(b.coupon, 30)}` : '',
+    from.source !== 'Website' ? `Came from ${from.source}${from.campaign ? ` — campaign "${from.campaign}"` : ''}` : '',
+  ].filter(Boolean);
+
+  const membership = await Membership.create({
+    customer: customer._id,
+    name: customer.name,
+    phone: customer.phone,
+    email: customer.email,
+    city: customer.city,
+    plan: plan._id,
+    planName: plan.name,
+    movement: 'New',
+    source: from.source,
+    receivedOn: new Date(),
+    expiresOn: expires,
+    amount,
+    paid: 0,
+    status: 'New',
+    expert: owner,
+    activation: { stage: 'Payment pending' },
+    timeline: lines.map((note) => ({ step: 'Website', at: new Date(), note })),
+  });
+
+  res.status(201).json({
+    success: true,
+    message: 'Membership requested',
+    data: { reference: membership.code, plan: wanted, expiresOn: expires },
   });
 });
