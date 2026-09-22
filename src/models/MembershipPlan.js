@@ -26,6 +26,8 @@ const planSchema = new mongoose.Schema(
     },
 
     discount: { type: Number, default: 0 },
+    /** How many preferred services a member on this plan may choose. */
+    privileges: { type: Number, default: 1 },
     services: [String],
     gifts: [String],
     features: [String],

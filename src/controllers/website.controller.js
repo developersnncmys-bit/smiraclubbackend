@@ -457,3 +457,19 @@ exports.membership = catchAsync(async (req, res) => {
     data: { reference: membership.code, plan: wanted, expiresOn: expires },
   });
 });
+
+/**
+ * The plans the website sells, as the desk has them set up.
+ *
+ * The membership page reads its prices and numbers from here, so a change on
+ * the admin panel's Plans page is what the website shows. Only published
+ * plans, and only what a visitor needs to choose one.
+ */
+exports.plans = catchAsync(async (req, res) => {
+  const plans = await MembershipPlan.find({ published: true })
+    .sort({ sortOrder: 1, price: 1 })
+    .select('code name tagline price durationMonths persons rooms freeStay privileges popular sortOrder')
+    .lean();
+  res.set('Cache-Control', 'public, max-age=60');
+  res.json({ success: true, data: plans });
+});
