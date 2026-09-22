@@ -287,12 +287,12 @@ const KIND_TYPE = {
   stay: 'Hotel', hotel: 'Hotel', hourly: 'Hotel', 'free-stay': 'Hotel',
   villa: 'Villa',
   table: 'Restaurant',
-  park: 'Activity', spa: 'Activity', luxury: 'Activity', adventure: 'Activity', camping: 'Activity', activity: 'Activity',
+  park: 'Activity', games: 'Activity', spa: 'Activity', luxury: 'Activity', adventure: 'Activity', camping: 'Activity', activity: 'Activity',
   package: 'Package', group: 'Package',
 };
 const KIND_LABEL = {
   stay: 'Hotel', hotel: 'Hotel', hourly: 'Hourly stay', 'free-stay': 'Free stay', villa: 'Villa',
-  table: 'Restaurant', park: 'Theme park', spa: 'Spa & salon', luxury: 'Luxury experience',
+  table: 'Restaurant', park: 'Theme park', games: 'Games zone', spa: 'Spa & salon', luxury: 'Luxury experience',
   adventure: 'Adventure', camping: 'Camping', activity: 'Activity', package: 'Package', group: 'Group departure',
 };
 
