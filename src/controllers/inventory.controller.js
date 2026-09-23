@@ -61,8 +61,16 @@ exports.availability = catchAsync(async (req, res) => {
   const from = req.query.from ? new Date(req.query.from) : new Date();
   const days = Math.min(90, Number(req.query.days) || 30);
 
-  const isBlackout = (d) =>
-    (item.blackouts || []).some((b) => d >= new Date(b.from) && d <= new Date(b.to));
+  /**
+   * Whole days, not instants. A blackout saved as a date lands on midnight
+   * UTC, while a day here begins at midnight where the desk is — compared as
+   * timestamps, an Indian day falls before its own blackout and stays on sale.
+   */
+  const dayKey = (d) => new Date(d).toISOString().slice(0, 10);
+  const isBlackout = (d) => {
+    const on = dayKey(new Date(d.getTime() - d.getTimezoneOffset() * 60000));
+    return (item.blackouts || []).some((b) => on >= dayKey(b.from) && on <= dayKey(b.to || b.from));
+  };
 
   const rows = Array.from({ length: days }, (_, i) => {
     const date = new Date(from.getFullYear(), from.getMonth(), from.getDate() + i);
