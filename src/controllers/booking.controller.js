@@ -16,14 +16,17 @@ const escape = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  * hotel or package name on the booking.
  */
 async function partnerFor(booking) {
+  // A partner the desk named is used either way; one we found ourselves is
+  // only used while their own switch says they are taking bookings.
   if (booking.vendor) return Partner.findById(booking.vendor);
+  const open = { acceptingBookings: { $ne: false } };
   const names = [booking.hotel, booking.packageName, booking.vendorName].map((n) => String(n || '').trim()).filter(Boolean);
   for (const n of names) {
     const exact = new RegExp(`^${escape(n)}$`, 'i');
-    const found = await Partner.findOne({ $or: [{ name: exact }, { 'listing.property.name': exact }] });
+    const found = await Partner.findOne({ ...open, $or: [{ name: exact }, { 'listing.property.name': exact }] });
     if (found) return found;
     const item = await InventoryItem.findOne({ name: exact, partner: { $ne: null } }).select('partner');
-    if (item) return Partner.findById(item.partner);
+    if (item) return Partner.findOne({ _id: item.partner, ...open });
   }
   return null;
 }

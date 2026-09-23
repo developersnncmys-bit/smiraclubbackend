@@ -165,6 +165,8 @@ const partnerSchema = new mongoose.Schema(
     approval: { type: String, enum: ['Waiting', 'Needs changes', 'Approved', 'Rejected'], default: 'Waiting' },
     stage: { type: String, default: 'Enquiry' },
     status: { type: String, enum: ['Active', 'Paused', 'Blacklisted', 'Pending'], default: 'Pending' },
+    /** The partner's own switch: taking bookings tonight, or not. */
+    acceptingBookings: { type: Boolean, default: true },
     rejectedReason: String,
     /** What the desk asked to be changed, shown to the partner in the portal. */
     reviewNote: { type: String, trim: true, maxlength: 2000 },

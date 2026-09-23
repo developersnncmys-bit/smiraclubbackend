@@ -66,6 +66,7 @@ const shape = (p) => ({
   submittedOn: p.submittedOn,
   contractSignedOn: p.contractSignedOn,
   rooms: p.rooms,
+  acceptingBookings: p.acceptingBookings !== false,
   rating: p.rating,
   responseMins: p.responseMins,
   commission: p.commission,
@@ -467,3 +468,115 @@ const answer = (accepted) =>
 
 exports.accept = answer(true);
 exports.decline = answer(false);
+
+/**
+ * The partner's own switch: taking bookings tonight, or not.
+ *
+ * Closed does not touch a booking already accepted — it says nothing new
+ * should be sent, which the desk reads on the partner's record.
+ */
+exports.setAccepting = catchAsync(async (req, res) => {
+  const open = req.body?.open !== false;
+  req.partner.acceptingBookings = open;
+  req.partner.activities.push({
+    at: new Date(),
+    text: open ? 'Opened for bookings in the partner portal' : 'Closed for bookings in the partner portal',
+  });
+  await req.partner.save({ validateBeforeSave: false });
+  res.json({ success: true, message: open ? 'Open for bookings' : 'Closed for bookings', data: { acceptingBookings: open } });
+});
+
+/**
+ * How the partner is doing, from their own bookings: the five the sheet
+ * scores a supplier on, plus what they have earned and what is still owed.
+ */
+exports.performance = catchAsync(async (req, res) => {
+  const bookings = await Booking.find({ vendor: req.partner._id }).lean();
+  const answered = bookings.filter((b) => /by partner/i.test(b.confirmation?.status || ''));
+  const accepted = bookings.filter((b) => /confirmed by partner/i.test(b.confirmation?.status || ''));
+  const declined = bookings.filter((b) => /declined by partner/i.test(b.confirmation?.status || ''));
+  const cancelled = bookings.filter((b) => b.status === 'Cancelled');
+  const completed = bookings.filter((b) => b.status === 'Completed');
+  const pct = (a, b) => (b ? Math.round((a / b) * 100) : null);
+
+  /** How long they took to answer, in hours, over the ones they answered. */
+  const hours = answered
+    .filter((b) => b.confirmation?.confirmedAt)
+    .map((b) => (new Date(b.confirmation.confirmedAt) - new Date(b.createdAt)) / 3600000)
+    .filter((h) => h >= 0);
+
+  res.json({
+    success: true,
+    data: {
+      bookings: bookings.length,
+      answered: answered.length,
+      waiting: bookings.filter((b) => b.status !== 'Cancelled' && !/by partner/i.test(b.confirmation?.status || '')).length,
+      acceptanceRate: pct(accepted.length, answered.length),
+      declineRate: pct(declined.length, answered.length),
+      cancellationRate: pct(cancelled.length, bookings.length),
+      completed: completed.length,
+      responseHours: hours.length ? Math.round((hours.reduce((s, h) => s + h, 0) / hours.length) * 10) / 10 : null,
+      earned: bookings.filter((b) => b.status !== 'Cancelled').reduce((s, b) => s + (b.vendorCost || 0), 0),
+      paidOut: bookings.reduce((s, b) => s + (b.vendorPaid || 0), 0),
+      rating: req.partner.rating || null,
+    },
+  });
+});
+
+/**
+ * Their own availability calendar: for each day, how many rooms are open
+ * across their stock, and what the desk has already taken.
+ */
+exports.availability = catchAsync(async (req, res) => {
+  const items = await InventoryItem.find({ partner: req.partner._id }).lean();
+  const from = req.query.from ? new Date(req.query.from) : new Date();
+  const span = Math.min(62, Number(req.query.days) || 42);
+  const bookings = await Booking.find({ vendor: req.partner._id, status: { $ne: 'Cancelled' } })
+    .select('checkIn checkOut rooms code customerName')
+    .lean();
+
+  const dayKey = (d) => new Date(d).toISOString().slice(0, 10);
+  const local = (d) => dayKey(new Date(d.getTime() - d.getTimezoneOffset() * 60000));
+
+  const days = Array.from({ length: span }, (_, i) => {
+    const date = new Date(from.getFullYear(), from.getMonth(), from.getDate() + i);
+    const on = local(date);
+
+    let open = 0;
+    let blacked = false;
+    items.forEach((item) => {
+      const override = (item.availability || []).find((a) => dayKey(a.date) === on);
+      const blackout = (item.blackouts || []).some((b) => on >= dayKey(b.from) && on <= dayKey(b.to || b.from));
+      if (blackout) { blacked = true; return; }
+      open += override ? Number(override.left || 0) : Math.max(0, (item.units || 0) - (item.booked || 0) - (item.blocked || 0));
+    });
+
+    const staying = bookings.filter((b) => b.checkIn && on >= dayKey(b.checkIn) && (!b.checkOut || on < dayKey(b.checkOut)));
+
+    return {
+      date,
+      open,
+      blackout: blacked,
+      staying: staying.reduce((s, b) => s + (b.rooms || 1), 0),
+      guests: staying.map((b) => b.customerName).filter(Boolean),
+    };
+  });
+
+  res.json({ success: true, data: { items: items.map((i) => ({ id: i._id, name: i.name, units: i.units || 0 })), days } });
+});
+
+/** The partner setting how many of their rooms are open on one day. */
+exports.setAvailability = catchAsync(async (req, res) => {
+  const { item, date, left } = req.body || {};
+  if (!date) throw ApiError.badRequest('Which day?');
+  const stock = await InventoryItem.findOne({ _id: item, partner: req.partner._id });
+  if (!stock) throw ApiError.notFound('That is not one of your properties');
+
+  const on = new Date(date);
+  const existing = (stock.availability || []).find((a) => new Date(a.date).toDateString() === on.toDateString());
+  if (existing) existing.left = Math.max(0, Number(left || 0));
+  else stock.availability.push({ date: on, left: Math.max(0, Number(left || 0)) });
+  await stock.save();
+
+  res.json({ success: true, message: 'Availability saved', data: { date: on, left: Math.max(0, Number(left || 0)) } });
+});
