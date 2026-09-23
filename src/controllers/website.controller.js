@@ -169,6 +169,24 @@ function profileFields(p) {
   return Object.fromEntries(Object.entries(out).filter(([, v]) => v !== undefined));
 }
 
+/**
+ * The plan a customer holds, or nothing.
+ *
+ * It decides what a website booking is: a member is confirmed the moment
+ * they book, and anybody else is making a request the desk answers. It is
+ * read from the desk's own records, never from what the browser claims.
+ */
+async function memberPlanOf(customer) {
+  if (!customer?._id) return null;
+  const held = await Membership.findOne({
+    customer: customer._id,
+    status: { $nin: ['Cancelled', 'Expired'] },
+  }).sort({ receivedOn: -1 }).lean();
+  if (!held) return null;
+  if (held.expiresOn && new Date(held.expiresOn) < new Date()) return null;
+  return String(held.planName || 'Smira Club').split(' ')[0];
+}
+
 /** The customer a website booking belongs to — found by number, or made. */
 async function customerFor({ name, phone, email, profile }, expert) {
   const extra = profileFields(profile);
@@ -239,6 +257,7 @@ exports.packageBooking = catchAsync(async (req, res) => {
 
   const owner = await pickDeskOwner();
   const customer = await customerFor({ name, phone, email, profile: b.profile }, owner);
+  const plan = await memberPlanOf(customer);
 
   const from = attribution(b.attribution);
   const note = [
@@ -265,20 +284,30 @@ exports.packageBooking = catchAsync(async (req, res) => {
     children,
     amount,
     paid: 0,
-    // Not the visitor's to decide.
-    status: 'Pending',
+    // Not the visitor's to decide: a member has a seat, anyone else has asked.
+    status: plan ? 'Confirmed' : 'Pending',
+    confirmation: { status: plan ? 'Member booking' : 'Request — not a member yet' },
     source: from.source,
     channel: 'Website',
     owner,
     specialNote: gstin ? `GST: ${gstin}` : undefined,
     handledBy: { handled: owner },
-    activities: note.map((line) => ({ kind: 'note', text: line, byName: 'Website' })),
+    activities: [
+      ...note.map((line) => ({ kind: 'note', text: line, byName: 'Website' })),
+      {
+        kind: 'status',
+        text: plan
+          ? `Confirmed on the spot — ${plan} member`
+          : 'Requested by someone who is not a member — check the seats and call back within 24 hours',
+        byName: 'Website',
+      },
+    ],
   });
 
   res.status(201).json({
     success: true,
-    message: 'Booking requested',
-    data: { reference: booking.code },
+    message: plan ? 'Booking confirmed' : 'Request received',
+    data: { reference: booking.code, status: plan ? 'confirmed' : 'requested', plan: plan || null },
   });
 });
 
@@ -353,6 +382,7 @@ exports.booking = catchAsync(async (req, res) => {
 
   const owner = await pickDeskOwner();
   const customer = await customerFor({ name, phone, email, profile: b.profile }, owner);
+  const plan = await memberPlanOf(customer);
 
   const type = KIND_TYPE[kind];
   const booking = await Booking.create({
@@ -369,19 +399,30 @@ exports.booking = catchAsync(async (req, res) => {
     adults: guestCount,
     amount,
     paid: 0,
-    status: 'Pending',
+    // A member is confirmed on the spot; anybody else has made a request.
+    status: plan ? 'Confirmed' : 'Pending',
+    confirmation: { status: plan ? 'Member booking' : 'Request — not a member yet' },
     source: from.source,
     channel: 'Website',
     owner,
     specialNote: gstin ? `GST: ${gstin}` : undefined,
     handledBy: { handled: owner },
-    activities: note.map((line) => ({ kind: 'note', text: line, byName: 'Website' })),
+    activities: [
+      ...note.map((line) => ({ kind: 'note', text: line, byName: 'Website' })),
+      {
+        kind: 'status',
+        text: plan
+          ? `Confirmed on the spot — ${plan} member`
+          : 'Requested by someone who is not a member — check availability and call back within 24 hours',
+        byName: 'Website',
+      },
+    ],
   });
 
   res.status(201).json({
     success: true,
-    message: 'Booking requested',
-    data: { reference: booking.code },
+    message: plan ? 'Booking confirmed' : 'Request received',
+    data: { reference: booking.code, status: plan ? 'confirmed' : 'requested', plan: plan || null },
   });
 });
 
