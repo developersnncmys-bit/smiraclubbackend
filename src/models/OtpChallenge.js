@@ -13,7 +13,7 @@ const mongoose = require('mongoose');
 const otpChallengeSchema = new mongoose.Schema(
   {
     phoneDigits: { type: String, required: true },
-    purpose: { type: String, required: true, enum: ['partner-signup'] },
+    purpose: { type: String, required: true, enum: ['partner-signup', 'member-login'] },
     codeHash: { type: String, required: true, select: false },
     expiresAt: { type: Date, required: true },
     attempts: { type: Number, default: 0 },

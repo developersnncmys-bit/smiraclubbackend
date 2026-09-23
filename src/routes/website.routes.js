@@ -32,5 +32,7 @@ router.post('/package-booking', perAddress, perPhone, c.packageBooking);
 router.post('/booking', perAddress, perPhone, c.booking);
 router.post('/membership', perAddress, perPhone, c.membership);
 router.get('/plans', c.plans);
+router.post('/member/otp', perAddress, perPhone, c.memberOtpRequest);
+router.post('/member/verify', perAddress, c.memberOtpVerify);
 
 module.exports = router;

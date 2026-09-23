@@ -473,3 +473,116 @@ exports.plans = catchAsync(async (req, res) => {
   res.set('Cache-Control', 'public, max-age=60');
   res.json({ success: true, data: plans });
 });
+
+// -- Members signing in on the website ---------------------------------------
+
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
+const OtpChallenge = require('../models/OtpChallenge');
+const sms = require('../helpers/sms');
+
+const OTP_MINUTES = 5;
+const OTP_ATTEMPTS = 5;
+const RESEND_SECONDS = 45;
+
+/** Seconds still to wait before another code may be asked for. */
+const tooSoon = (last) => {
+  if (!last) return 0;
+  const gone = (Date.now() - new Date(last).getTime()) / 1000;
+  return gone < RESEND_SECONDS ? Math.ceil(RESEND_SECONDS - gone) : 0;
+};
+
+const tenDigits = (v) => String(v || '').replace(/\D/g, '').slice(-10);
+
+/** The customer behind a number, however their number was typed in. */
+const customerByPhone = (digits) =>
+  Customer.findOne({ phone: new RegExp(`${digits.split('').join('\\D*')}$`) });
+
+/**
+ * "Send me a code" on the website's sign-in screen.
+ *
+ * The code is kept hashed against the number, not against a customer, so a
+ * number nobody has booked with cannot be told whether it is known. Until an
+ * SMS provider is wired the helper hands the code back for the screen to show
+ * — an authentication bypass, and only for the demo.
+ */
+exports.memberOtpRequest = catchAsync(async (req, res) => {
+  const digits = tenDigits(req.body.phone);
+  if (!/^[6-9]\d{9}$/.test(digits)) throw ApiError.badRequest('Enter a ten digit mobile number');
+
+  const existing = await OtpChallenge.findOne({ phoneDigits: digits, purpose: 'member-login' });
+  const wait = tooSoon(existing?.lastSentAt);
+  if (wait) throw new ApiError(429, `Ask again in ${wait} seconds`);
+
+  const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  await OtpChallenge.findOneAndUpdate(
+    { phoneDigits: digits, purpose: 'member-login' },
+    { codeHash: await bcrypt.hash(code, 10), expiresAt: new Date(Date.now() + OTP_MINUTES * 60000), attempts: 0, lastSentAt: new Date(), createdAt: new Date() },
+    { upsert: true, setDefaultsOnInsert: true },
+  );
+
+  const sent = await sms.send(`+91 ${digits}`, code);
+  res.json({
+    success: true,
+    message: sent.delivered ? 'Code sent' : 'Code generated',
+    data: { expiresInMinutes: OTP_MINUTES, ...(sent.devCode ? { devCode: sent.devCode, demo: true } : {}) },
+  });
+});
+
+/**
+ * The code, and what signing in gives back: the member's own details and the
+ * membership the desk holds for them, so a member who joined on one phone has
+ * their profile and plan on the next. A number the desk has never seen signs
+ * in as somebody new, with the profile still to fill in.
+ */
+exports.memberOtpVerify = catchAsync(async (req, res) => {
+  const digits = tenDigits(req.body.phone);
+  const code = String(req.body.code || '').replace(/\D/g, '');
+  if (!/^[6-9]\d{9}$/.test(digits)) throw ApiError.badRequest('Enter a ten digit mobile number');
+  if (code.length !== 6) throw ApiError.badRequest('Enter the six digit code');
+
+  const challenge = await OtpChallenge.findOne({ phoneDigits: digits, purpose: 'member-login' }).select('+codeHash');
+  if (!challenge) throw ApiError.badRequest('Ask for a code first');
+  if (challenge.expiresAt < new Date()) throw ApiError.badRequest('That code has expired — ask for another');
+  if (challenge.attempts >= OTP_ATTEMPTS) throw ApiError.badRequest('Too many tries — ask for another code');
+
+  if (!(await bcrypt.compare(code, challenge.codeHash))) {
+    challenge.attempts += 1;
+    await challenge.save();
+    throw ApiError.badRequest('That code is not right');
+  }
+  await challenge.deleteOne();
+
+  const customer = await customerByPhone(digits);
+  const membership = customer
+    ? await Membership.findOne({ customer: customer._id, status: { $ne: 'Cancelled' } }).sort({ receivedOn: -1 }).lean()
+    : null;
+
+  res.json({
+    success: true,
+    message: customer ? 'Signed in' : 'Welcome to Smira Club',
+    data: {
+      isNew: !customer,
+      member: customer
+        ? {
+            name: customer.name,
+            email: customer.email || '',
+            phone: `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`,
+            city: customer.city || '',
+            address: customer.address || '',
+            dob: customer.dob || null,
+            anniversary: customer.anniversary || null,
+          }
+        : { name: '', email: '', phone: `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`, city: '', address: '', dob: null, anniversary: null },
+      membership: membership
+        ? {
+            plan: String(membership.planName || '').split(' ')[0],
+            planName: membership.planName,
+            reference: membership.code,
+            status: membership.activation?.stage === 'Activated' ? 'Active' : membership.activation?.stage || membership.status,
+            expiresOn: membership.expiresOn || null,
+          }
+        : null,
+    },
+  });
+});
