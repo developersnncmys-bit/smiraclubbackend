@@ -563,6 +563,8 @@ exports.memberOtpVerify = catchAsync(async (req, res) => {
     message: customer ? 'Signed in' : 'Welcome to Smira Club',
     data: {
       isNew: !customer,
+      // A session only for a number the desk already knows.
+      token: customer ? memberToken(customer) : null,
       member: customer
         ? {
             name: customer.name,
@@ -583,6 +585,76 @@ exports.memberOtpVerify = catchAsync(async (req, res) => {
             expiresOn: membership.expiresOn || null,
           }
         : null,
+    },
+  });
+});
+
+/** A member's own session, once their number has been proved. */
+const jwt = require('jsonwebtoken');
+
+const memberToken = (customer) =>
+  jwt.sign({ sub: customer._id, kind: 'member' }, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  });
+
+exports.memberToken = memberToken;
+
+/** How a booking reads to the member it belongs to. */
+const bookingForMember = (b) => ({
+  reference: b.code,
+  kind: b.bookingType,
+  name: b.hotel || b.packageName || b.bookingType,
+  destination: b.destination || '',
+  checkIn: b.checkIn || b.departureOn || null,
+  checkOut: b.checkOut || null,
+  nights: b.nights || 0,
+  guests: b.pax || 0,
+  amount: b.amount || 0,
+  paid: b.paid || 0,
+  status: b.status,
+  /**
+   * Where it has got to between the desk and the property, in the member's
+   * words — the desk's own wording ("Sent to partner") is not theirs to read.
+   */
+  progress:
+    b.status === 'Cancelled'
+      ? 'Cancelled'
+      : /Declined by partner/i.test(b.confirmation?.status || '')
+        ? 'Finding another property'
+        : /Confirmed by partner|Hotel confirmed/i.test(b.confirmation?.status || '')
+          ? 'Confirmed by the property'
+          : b.status === 'Pending'
+            ? 'Waiting for our desk to confirm'
+            : 'Confirmed by our desk',
+  bookedOn: b.createdAt,
+});
+
+/**
+ * Everything the signed-in member's own screens need: who they are, the
+ * membership the desk holds, and their bookings with where each one has got
+ * to. Read from their token, never from an id in the address.
+ */
+exports.memberMe = catchAsync(async (req, res) => {
+  const me = req.member;
+  const [membership, bookings] = await Promise.all([
+    Membership.findOne({ customer: me._id, status: { $ne: 'Cancelled' } }).sort({ receivedOn: -1 }).lean(),
+    Booking.find({ customer: me._id }).sort({ createdAt: -1 }).limit(50).lean(),
+  ]);
+
+  res.json({
+    success: true,
+    data: {
+      member: { name: me.name, email: me.email || '', phone: me.phone, city: me.city || '' },
+      membership: membership
+        ? {
+            plan: String(membership.planName || '').split(' ')[0],
+            planName: membership.planName,
+            reference: membership.code,
+            status: membership.activation?.stage === 'Activated' ? 'Active' : membership.activation?.stage || membership.status,
+            expiresOn: membership.expiresOn || null,
+          }
+        : null,
+      bookings: bookings.map(bookingForMember),
     },
   });
 });

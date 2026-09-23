@@ -445,6 +445,15 @@ const answer = (accepted) =>
       status: accepted ? 'Confirmed by partner' : 'Declined by partner',
       confirmedAt: accepted ? new Date() : undefined,
     };
+    // The desk reads the booking, not the partner's own log, so the answer
+    // goes on the booking's trail — a decline is work for somebody there.
+    booking.activities.push({
+      kind: 'status',
+      text: accepted
+        ? `${req.partner.name} accepted the booking`
+        : `${req.partner.name} declined the booking — find another property or call the guest`,
+      byName: req.partner.name,
+    });
     await booking.save({ validateBeforeSave: false });
 
     req.partner.activities.push({

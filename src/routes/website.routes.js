@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const rateLimit = require('express-rate-limit');
 const c = require('../controllers/website.controller');
+const { protectMember } = require('../middleware/memberAuth');
 
 /**
  * Routes the public website posts to, with nobody signed in.
@@ -34,5 +35,6 @@ router.post('/membership', perAddress, perPhone, c.membership);
 router.get('/plans', c.plans);
 router.post('/member/otp', perAddress, perPhone, c.memberOtpRequest);
 router.post('/member/verify', perAddress, c.memberOtpVerify);
+router.get('/member/me', protectMember, c.memberMe);
 
 module.exports = router;
