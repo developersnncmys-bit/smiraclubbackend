@@ -111,9 +111,14 @@ const tooSoon = (lastSentAt) =>
 // -- Signing in, or registering ----------------------------------------------
 
 /**
- * One door for both. A number we know gets a sign-in code; a number we do not
- * gets a registration code, held in a challenge rather than on a partner,
- * because nothing should be created until the number is proved.
+ * Two doors, asked for separately.
+ *
+ * Signing in and registering are not the same thing, so a number is never
+ * quietly given an account it did not ask for: a number we do not hold is
+ * turned away from the sign-in door and told to register, and a number we do
+ * hold is turned away from the register door and told to sign in. A
+ * registration code is held in a challenge rather than on a partner, because
+ * nothing is created until the number is proved.
  */
 exports.requestOtp = catchAsync(async (req, res) => {
   const digits = Partner.digits(req.body.phone);
@@ -124,6 +129,14 @@ exports.requestOtp = catchAsync(async (req, res) => {
   const expiresAt = new Date(Date.now() + OTP_MINUTES * 60000);
 
   const partner = await Partner.findOne({ phoneDigits: digits }).select('+otp.codeHash');
+
+  const registering = req.body.mode === 'register';
+  if (!registering && !partner) {
+    throw ApiError.notFound('No partner is registered with that number');
+  }
+  if (registering && partner) {
+    throw ApiError.badRequest('That number is already registered — sign in instead');
+  }
 
   if (partner) {
     if (partner.status === 'Blacklisted') throw ApiError.forbidden('That partner account has been closed');
@@ -180,6 +193,12 @@ exports.verifyOtp = catchAsync(async (req, res) => {
 
   let partner = await Partner.findOne({ phoneDigits: digits }).select('+otp.codeHash');
   let isNew = false;
+
+  // The same two doors as the code request, so neither can be walked through
+  // sideways by verifying against the other one's endpoint.
+  const registering = req.body.mode === 'register';
+  if (!registering && !partner) throw ApiError.notFound('No partner is registered with that number');
+  if (registering && partner) throw ApiError.badRequest('That number is already registered — sign in instead');
 
   if (partner) {
     await spend(partner.otp, code, () => partner.save({ validateBeforeSave: false }));
