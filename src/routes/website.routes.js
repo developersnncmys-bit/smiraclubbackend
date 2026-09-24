@@ -33,6 +33,15 @@ router.post('/package-booking', perAddress, perPhone, c.packageBooking);
 router.post('/booking', perAddress, perPhone, c.booking);
 router.post('/membership', perAddress, perPhone, c.membership);
 router.get('/plans', c.plans);
+
+/**
+ * What the desk is selling, read-only and open, so the site can show the
+ * stock and the offers the panel holds rather than the copy in its build.
+ */
+router.get('/catalog', c.catalog);
+router.get('/catalog/:id', c.catalogItem);
+router.get('/offers', c.liveOffers);
+
 router.post('/member/otp', perAddress, perPhone, c.memberOtpRequest);
 router.post('/member/verify', perAddress, c.memberOtpVerify);
 router.get('/member/me', protectMember, c.memberMe);

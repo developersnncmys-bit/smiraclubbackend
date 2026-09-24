@@ -167,6 +167,7 @@ const INVENTORY_CATEGORIES = [
   'Spa and salon',
   'Attractions',
   'Experiences',
+  'Games',
 ];
 
 const RATE_TYPES = [

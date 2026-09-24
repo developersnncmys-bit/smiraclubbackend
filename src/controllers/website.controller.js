@@ -1,11 +1,15 @@
+const mongoose = require('mongoose');
 const Lead = require('../models/Lead');
 const Booking = require('../models/Booking');
 const Customer = require('../models/Customer');
 const User = require('../models/User');
 const Membership = require('../models/Membership');
 const MembershipPlan = require('../models/MembershipPlan');
+const InventoryItem = require('../models/InventoryItem');
+const Offer = require('../models/Offer');
 const ApiError = require('../helpers/ApiError');
 const catchAsync = require('../helpers/catchAsync');
+const { sellingRate, memberRate } = require('../helpers/money');
 
 /**
  * Who picks up what the website sends.
@@ -697,5 +701,153 @@ exports.memberMe = catchAsync(async (req, res) => {
         : null,
       bookings: bookings.map(bookingForMember),
     },
+  });
+});
+
+/* -- What the desk is selling -------------------------------------------- */
+
+/**
+ * The catalogue the website reads.
+ *
+ * Everything a member browses — hotels, villas, restaurants, spas, parks,
+ * activities, packages — is Travel Inventory on the panel. The website had
+ * no way to ask for any of it: /inventory is staff-only, so the site ran on
+ * the copy bundled into its own build and nothing the desk added ever showed
+ * up. This is that same stock with only the public parts on it, and no way
+ * in: what a room costs the desk, which partner supplies it, how it is
+ * allocated and who booked it stay behind the counter.
+ *
+ * A category with nothing Active in it comes back empty rather than as an
+ * error, so the site can fall back to what it ships with and never show a
+ * member a blank screen.
+ */
+
+/** Sold out and Blocked are not on offer; the rest are. */
+const ON_OFFER = ['Active', 'Limited', 'Low'];
+
+/** A date the desk has closed, or a day it has emptied, is not bookable. */
+function closedOn(item, on) {
+  const key = (d) => new Date(d).toISOString().slice(0, 10);
+  if ((item.blackouts || []).some((b) => on >= key(b.from) && on <= key(b.to || b.from))) return true;
+  const override = (item.availability || []).find((a) => key(a.date) === on);
+  return Boolean(override && Number(override.left || 0) <= 0);
+}
+
+/** One row of stock, as a card on the website reads it. */
+function forWebsite(item) {
+  const selling = sellingRate(item.baseRate, item.markup);
+  const member = memberRate(item.baseRate, item.markup, item.memberDiscount);
+  const left = Math.max(0, (item.units || 0) - (item.booked || 0) - (item.blocked || 0));
+
+  return {
+    id: item.code || String(item._id),
+    ref: String(item._id),
+    category: item.category,
+    name: item.name,
+    place: item.destination || '',
+    grade: item.grade || '',
+    description: item.description || '',
+    address: item.address || '',
+    gps: item.gps || '',
+    checkIn: item.checkIn || '',
+    checkOut: item.checkOut || '',
+    amenities: item.amenities || [],
+    images: item.images || [],
+    /** What a member pays, and what it would cost without the membership. */
+    price: member,
+    was: member < selling ? selling : 0,
+    off: selling > 0 && member < selling ? Math.round(((selling - member) / selling) * 100) : 0,
+    left,
+    status: item.status,
+    rooms: (item.rooms || []).map((r) => ({
+      type: r.type,
+      occupancy: r.occupancy,
+      mealPlan: r.mealPlan,
+      extraBed: r.extraBed,
+      childPolicy: r.childPolicy,
+      /** The member price and the rack rate it is struck from. */
+      price: Number(r.member || r.smira || r.rack || 0),
+      was: Number(r.rack || 0),
+    })),
+  };
+}
+
+/**
+ * A category of stock, or all of it. `from` and `to` drop anything the desk
+ * has closed over those nights, so a member is not shown a stay they cannot
+ * have.
+ */
+exports.catalog = catchAsync(async (req, res) => {
+  const { category, destination, q, from, to } = req.query;
+  const where = { status: { $in: ON_OFFER } };
+  if (category) where.category = category;
+  if (destination) where.destination = new RegExp(String(destination).trim(), 'i');
+  if (q) {
+    const like = new RegExp(String(q).trim(), 'i');
+    where.$or = [{ name: like }, { destination: like }, { description: like }];
+  }
+
+  const items = await InventoryItem.find(where)
+    .sort({ category: 1, name: 1 })
+    .limit(200)
+    .lean({ virtuals: false });
+
+  let open = items;
+  if (from) {
+    const start = new Date(from);
+    const end = to ? new Date(to) : start;
+    const nights = [];
+    for (let d = new Date(start); d < end || nights.length === 0; d.setDate(d.getDate() + 1)) {
+      nights.push(d.toISOString().slice(0, 10));
+      if (nights.length > 60) break;
+    }
+    open = items.filter((item) => !nights.some((on) => closedOn(item, on)));
+  }
+
+  res.json({ success: true, count: open.length, data: open.map(forWebsite) });
+});
+
+/** One thing the desk sells, by its code or its id. */
+exports.catalogItem = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const where = mongoose.isValidObjectId(id) ? { _id: id } : { code: String(id).toUpperCase() };
+  const item = await InventoryItem.findOne({ ...where, status: { $in: ON_OFFER } }).lean({ virtuals: false });
+  if (!item) throw ApiError.notFound('We do not have that one');
+  res.json({ success: true, data: forWebsite(item) });
+});
+
+/**
+ * The offers the desk has put live, for the Offers screen and the promo
+ * strips. A coupon's own code is included because a member has to be able
+ * to quote it; how many times it has been used is not.
+ */
+exports.liveOffers = catchAsync(async (req, res) => {
+  const now = new Date();
+  const offers = await Offer.find({
+    status: 'Live',
+    $and: [
+      { $or: [{ startsOn: null }, { startsOn: { $lte: now } }] },
+      { $or: [{ endsOn: null }, { endsOn: { $gte: now } }] },
+    ],
+  })
+    .sort({ endsOn: 1, createdAt: -1 })
+    .limit(50)
+    .lean();
+
+  res.json({
+    success: true,
+    count: offers.length,
+    data: offers.map((o) => ({
+      id: o.code || String(o._id),
+      name: o.name,
+      coupon: o.couponCode || '',
+      description: o.description || '',
+      kind: o.kind,
+      value: o.value,
+      maxDiscount: o.maxDiscount,
+      minSpend: o.minSpend,
+      appliesTo: o.appliesTo || [],
+      endsOn: o.endsOn || null,
+    })),
   });
 });
