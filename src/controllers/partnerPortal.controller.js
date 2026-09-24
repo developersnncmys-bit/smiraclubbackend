@@ -381,8 +381,20 @@ exports.submitListing = catchAsync(async (req, res) => {
 
 const startOfDay = (d = new Date()) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 
+/**
+ * Everything past the listing is for a partner who is live.
+ *
+ * Accepting a booking already said so; the screens around it did not, and
+ * answered a half-registered property with an empty dashboard as though it
+ * were open for business. One rule now, said in one place.
+ */
+const mustBeLive = (partner) => {
+  if (!isLive(partner)) throw ApiError.forbidden('Your listing is not live yet');
+};
+
 exports.dashboard = catchAsync(async (req, res) => {
   const me = req.partner;
+  mustBeLive(me);
 
   const [bookings, stock, tickets] = await Promise.all([
     // A booking reaches its partner once the desk has confirmed it; until then it is the desk's.
@@ -495,6 +507,7 @@ exports.decline = answer(false);
  * should be sent, which the desk reads on the partner's record.
  */
 exports.setAccepting = catchAsync(async (req, res) => {
+  mustBeLive(req.partner);
   const open = req.body?.open !== false;
   req.partner.acceptingBookings = open;
   req.partner.activities.push({
@@ -510,6 +523,7 @@ exports.setAccepting = catchAsync(async (req, res) => {
  * scores a supplier on, plus what they have earned and what is still owed.
  */
 exports.performance = catchAsync(async (req, res) => {
+  mustBeLive(req.partner);
   const bookings = await Booking.find({ vendor: req.partner._id }).lean();
   const answered = bookings.filter((b) => /by partner/i.test(b.confirmation?.status || ''));
   const accepted = bookings.filter((b) => /confirmed by partner/i.test(b.confirmation?.status || ''));
@@ -547,6 +561,7 @@ exports.performance = catchAsync(async (req, res) => {
  * across their stock, and what the desk has already taken.
  */
 exports.availability = catchAsync(async (req, res) => {
+  mustBeLive(req.partner);
   const items = await InventoryItem.find({ partner: req.partner._id }).lean();
   const from = req.query.from ? new Date(req.query.from) : new Date();
   const span = Math.min(62, Number(req.query.days) || 42);
@@ -586,6 +601,7 @@ exports.availability = catchAsync(async (req, res) => {
 
 /** The partner setting how many of their rooms are open on one day. */
 exports.setAvailability = catchAsync(async (req, res) => {
+  mustBeLive(req.partner);
   const { item, date, left } = req.body || {};
   if (!date) throw ApiError.badRequest('Which day?');
   const stock = await InventoryItem.findOne({ _id: item, partner: req.partner._id });

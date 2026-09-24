@@ -37,6 +37,16 @@ exports.apply = catchAsync(async (req, res) => {
   if (!name) throw ApiError.badRequest('Tell us the property name');
   if (!phone) throw ApiError.badRequest('Tell us a phone number we can reach you on');
 
+  /**
+   * One number, one partner. Sign-in finds a partner by their number, so a
+   * second application on the same one would leave it ambiguous which
+   * account the code lets you into.
+   */
+  const digits = Partner.digits(phone);
+  if (digits && (await Partner.exists({ phoneDigits: digits }))) {
+    throw ApiError.badRequest('That number is already registered — sign in to the partner portal instead');
+  }
+
   const CATEGORIES = ['Hotel', 'Villa', 'Package', 'Lifestyle', 'Transport', 'Restaurant', 'Activity', 'Spa'];
   const category = CATEGORIES.includes(b.category) ? b.category : 'Hotel';
 
