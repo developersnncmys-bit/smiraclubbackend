@@ -70,6 +70,17 @@ exports.apply = catchAsync(async (req, res) => {
     bank: text(b.bank, 120),
     rooms,
 
+    /**
+     * The five steps, when they were filled in.
+     *
+     * The website's partner form walks the same steps the portal does, so
+     * the whole listing can arrive with the application rather than being
+     * chased afterwards. The schema decides what is kept — anything it does
+     * not declare is dropped on the way in — so this cannot be used to set
+     * fields that are not the applicant's.
+     */
+    ...(b.listing && typeof b.listing === 'object' ? { listing: b.listing } : {}),
+
     // Not the applicant's to decide.
     submittedOn: new Date(),
     stage: 'Registration',
