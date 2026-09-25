@@ -36,6 +36,17 @@ const planSchema = new mongoose.Schema(
     popular: { type: Boolean, default: false },
     sortOrder: { type: Number, default: 0 },
 
+    /**
+     * The colour the plan wears, on the panel and on the website's pricing
+     * page. Named rather than a hex, so each end draws its own gradient from
+     * it and the two cannot drift into slightly different golds.
+     */
+    accent: {
+      type: String,
+      enum: ['slate', 'amber', 'violet', 'brand', 'sky', 'emerald', 'rose'],
+      default: 'brand',
+    },
+
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   },

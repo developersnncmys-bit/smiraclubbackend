@@ -511,9 +511,18 @@ exports.membership = catchAsync(async (req, res) => {
  * plans, and only what a visitor needs to choose one.
  */
 exports.plans = catchAsync(async (req, res) => {
+  /**
+   * Everything the pricing page draws, so the panel's promise that what is
+   * added there shows up here is actually kept. Features, gifts and the
+   * discount were held back, which is why a plan edited on the panel changed
+   * its price on the website and nothing else.
+   */
   const plans = await MembershipPlan.find({ published: true })
     .sort({ sortOrder: 1, price: 1 })
-    .select('code name tagline price durationMonths persons rooms freeStay privileges popular sortOrder')
+    .select(
+      'code name tagline price billing discount durationMonths persons rooms freeStay ' +
+        'privileges services gifts features popular sortOrder accent',
+    )
     .lean();
   res.set('Cache-Control', 'public, max-age=60');
   res.json({ success: true, data: plans });
