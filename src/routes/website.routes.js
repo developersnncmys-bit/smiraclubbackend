@@ -32,6 +32,7 @@ router.post('/trip-enquiry', perAddress, perPhone, c.tripEnquiry);
 router.post('/package-booking', perAddress, perPhone, c.packageBooking);
 router.post('/booking', perAddress, perPhone, c.booking);
 router.post('/membership', perAddress, perPhone, c.membership);
+router.post('/enquiry', perAddress, perPhone, c.enquiry);
 router.get('/plans', c.plans);
 
 /**

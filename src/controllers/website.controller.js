@@ -851,3 +851,66 @@ exports.liveOffers = catchAsync(async (req, res) => {
     })),
   });
 });
+
+/* -- Any other thing the website asks for -------------------------------- */
+
+/**
+ * A service enquiry, whatever the service is.
+ *
+ * Plan a trip, a visa, travel insurance, forex — screens that each asked a
+ * different set of questions and then only told the visitor it had been
+ * sent. Nothing left the browser, so the desk never heard about any of it.
+ *
+ * Rather than an endpoint per screen, the form names its service and hands
+ * over whatever it asked, as label and answer. It lands in Sales & Leads as
+ * a new lead with the whole form written onto it, tagged by service so the
+ * desk can filter to just the visa enquiries or just the trip plans.
+ */
+exports.enquiry = catchAsync(async (req, res) => {
+  const b = req.body || {};
+
+  const service = text(b.service, 40) || 'Enquiry';
+  const name = text(b.name, 80);
+  const phone = String(b.phone || '').replace(/\D/g, '').slice(-10);
+  const email = text(b.email, 120).toLowerCase();
+
+  if (name.length < 2) throw ApiError.badRequest('Tell us your name');
+  if (!/^[6-9]\d{9}$/.test(phone)) throw ApiError.badRequest('Enter a 10-digit mobile number');
+  if (email && !/^\S+@\S+\.\S+$/.test(email)) throw ApiError.badRequest('That email does not look right');
+
+  /** Whatever the form asked, in the order it asked it. */
+  const answers = Array.isArray(b.answers) ? b.answers.slice(0, 40) : [];
+  const lines = [
+    `${service} — asked for on the website`,
+    ...answers
+      .map((a) => [text(a?.label, 60), text(a?.value, 200)])
+      .filter(([label, value]) => label && value)
+      .map(([label, value]) => `${label}: ${value}`),
+  ];
+  const brief = lines.join('\n');
+
+  const lead = await Lead.create({
+    name,
+    phone: `+91 ${phone.slice(0, 5)} ${phone.slice(5)}`,
+    email: email || undefined,
+    destination: text(b.destination, 120) || undefined,
+    pax: b.pax ? count(b.pax, 1, 60) : undefined,
+    travelDate: day(b.travelDate),
+    ...attribution(b.attribution),
+    label: service,
+    tags: [service].concat(list(b.tags, 4)),
+    notes: brief,
+    // Not the visitor's to decide.
+    status: 'New',
+    score: 'Warm',
+    priority: 'Medium',
+    owner: await pickDeskOwner(),
+    activities: [{ kind: 'note', text: brief, byName: 'Website' }],
+  });
+
+  res.status(201).json({
+    success: true,
+    message: 'Enquiry received',
+    data: { reference: lead.code },
+  });
+});
