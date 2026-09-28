@@ -28,6 +28,19 @@ const perPhone = rateLimit({
   validate: false,
 });
 
+/**
+ * Counting a page view is not filling in a form: browsing a few listings is
+ * normal, and a whole office can share one address. It is still capped, so
+ * a script cannot sit and inflate a partner's numbers all afternoon.
+ */
+const perView = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 300,
+  message: { success: false, message: 'Too many requests' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 router.post('/trip-enquiry', perAddress, perPhone, c.tripEnquiry);
 router.post('/package-booking', perAddress, perPhone, c.packageBooking);
 router.post('/booking', perAddress, perPhone, c.booking);
@@ -41,6 +54,7 @@ router.get('/plans', c.plans);
  */
 router.get('/catalog', c.catalog);
 router.get('/catalog/:id', c.catalogItem);
+router.post('/catalog/:id/view', perView, c.listingView);
 router.get('/offers', c.liveOffers);
 
 router.post('/member/otp', perAddress, perPhone, c.memberOtpRequest);

@@ -90,6 +90,18 @@ const inventorySchema = new mongoose.Schema(
     ],
     blackouts: [{ from: Date, to: Date, reason: String, _id: false }],
 
+    /**
+     * How often the website opened this listing.
+     *
+     * "How is my listing doing?" cannot be answered by bookings alone: a
+     * listing nobody looks at and a listing everybody looks at and nobody
+     * books are different problems, and only the second one is about the
+     * price. `views` is the running total; `viewDays` is the recent past
+     * day by day, trimmed on write so the document cannot grow for ever.
+     */
+    views: { type: Number, default: 0 },
+    viewDays: [{ date: Date, count: Number, _id: false }],
+
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   },

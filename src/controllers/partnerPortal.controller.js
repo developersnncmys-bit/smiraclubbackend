@@ -524,7 +524,10 @@ exports.setAccepting = catchAsync(async (req, res) => {
  */
 exports.performance = catchAsync(async (req, res) => {
   mustBeLive(req.partner);
-  const bookings = await Booking.find({ vendor: req.partner._id }).lean();
+  const [bookings, stock] = await Promise.all([
+    Booking.find({ vendor: req.partner._id }).lean(),
+    InventoryItem.find({ partner: req.partner._id }).select('name views viewDays').lean(),
+  ]);
   const answered = bookings.filter((b) => /by partner/i.test(b.confirmation?.status || ''));
   const accepted = bookings.filter((b) => /confirmed by partner/i.test(b.confirmation?.status || ''));
   const declined = bookings.filter((b) => /declined by partner/i.test(b.confirmation?.status || ''));
@@ -538,9 +541,48 @@ exports.performance = catchAsync(async (req, res) => {
     .map((b) => (new Date(b.confirmation.confirmedAt) - new Date(b.createdAt)) / 3600000)
     .filter((h) => h >= 0);
 
+  /**
+   * How often the website opened their listings, day by day.
+   *
+   * Bookings alone cannot tell a partner whether the problem is that nobody
+   * is looking or that everybody looks and nobody books — and only the
+   * second one is about the price. The last 30 days are summed for the
+   * figure and the last 14 kept in order for the little chart.
+   */
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const dayAt = (back) => new Date(startOfToday.getTime() - back * 86400000);
+  const sameDay = (a, b) => new Date(a).toDateString() === b.toDateString();
+  const viewsOn = (d) =>
+    stock.reduce(
+      (sum, i) => sum + (i.viewDays || []).filter((v) => sameDay(v.date, d)).reduce((n, v) => n + (v.count || 0), 0),
+      0,
+    );
+
+  const recent = Array.from({ length: 14 }, (_, i) => {
+    const d = dayAt(13 - i);
+    return { date: d, views: viewsOn(d) };
+  });
+  const since = (days) =>
+    Array.from({ length: days }, (_, i) => viewsOn(dayAt(i))).reduce((a, b) => a + b, 0);
+
+  const views = {
+    total: stock.reduce((sum, i) => sum + (i.views || 0), 0),
+    last7: since(7),
+    last30: since(30),
+    recent,
+    // Of the people who looked this month, how many ended up booking.
+    booked: bookings.filter((b) => b.createdAt && b.createdAt >= dayAt(30)).length,
+    listings: stock
+      .map((i) => ({ name: i.name, views: i.views || 0 }))
+      .sort((a, b) => b.views - a.views),
+  };
+  views.conversion = views.last30 ? Math.round((views.booked / views.last30) * 1000) / 10 : null;
+
   res.json({
     success: true,
     data: {
+      views,
       bookings: bookings.length,
       answered: answered.length,
       waiting: bookings.filter((b) => b.status !== 'Cancelled' && !/by partner/i.test(b.confirmation?.status || '')).length,
@@ -569,20 +611,40 @@ exports.availability = catchAsync(async (req, res) => {
     .select('checkIn checkOut rooms code customerName')
     .lean();
 
-  const dayKey = (d) => new Date(d).toISOString().slice(0, 10);
-  const local = (d) => dayKey(new Date(d.getTime() - d.getTimezoneOffset() * 60000));
+  /**
+   * Which calendar day a moment falls on, in the desk's own timezone.
+   *
+   * A day was previously keyed by its UTC date on one side of the
+   * comparison and by the server's local date on the other. In India those
+   * are different days for the five and a half hours after midnight, so a
+   * rate or a room count saved against a day was never found again. Both
+   * sides now name the day the same way, and it no longer depends on where
+   * the server happens to be running.
+   */
+  const dayKey = (d) => new Date(d).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
   const days = Array.from({ length: span }, (_, i) => {
     const date = new Date(from.getFullYear(), from.getMonth(), from.getDate() + i);
-    const on = local(date);
+    const on = dayKey(date);
 
     let open = 0;
     let blacked = false;
+    /**
+     * What the day is worth to them.
+     *
+     * A partner's rate is what Smira pays them — never the price a member
+     * sees, which carries the desk's margin. Where their rooms are priced
+     * differently, the calendar shows the lowest, the way a listing says
+     * "from".
+     */
+    const rates = [];
     items.forEach((item) => {
       const override = (item.availability || []).find((a) => dayKey(a.date) === on);
       const blackout = (item.blackouts || []).some((b) => on >= dayKey(b.from) && on <= dayKey(b.to || b.from));
       if (blackout) { blacked = true; return; }
       open += override ? Number(override.left || 0) : Math.max(0, (item.units || 0) - (item.booked || 0) - (item.blocked || 0));
+      const rate = override && override.rate != null ? Number(override.rate) : Number(item.baseRate || 0);
+      if (rate > 0) rates.push(rate);
     });
 
     const staying = bookings.filter((b) => b.checkIn && on >= dayKey(b.checkIn) && (!b.checkOut || on < dayKey(b.checkOut)));
@@ -591,27 +653,62 @@ exports.availability = catchAsync(async (req, res) => {
       date,
       open,
       blackout: blacked,
+      rate: rates.length ? Math.min(...rates) : null,
+      // Only worth saying "from" when the rooms are not all one price.
+      rateFrom: rates.length > 1 && Math.min(...rates) !== Math.max(...rates),
       staying: staying.reduce((s, b) => s + (b.rooms || 1), 0),
       guests: staying.map((b) => b.customerName).filter(Boolean),
     };
   });
 
-  res.json({ success: true, data: { items: items.map((i) => ({ id: i._id, name: i.name, units: i.units || 0 })), days } });
+  res.json({
+    success: true,
+    data: {
+      /**
+       * Each property, its usual rate, and the days it has been set apart
+       * from. Without the overrides the panel cannot show a day back the
+       * way it was saved — it would offer the full room count and a blank
+       * price on a day the partner had already closed down to two.
+       */
+      items: items.map((i) => ({
+        id: i._id,
+        name: i.name,
+        units: i.units || 0,
+        rate: i.baseRate || 0,
+        overrides: (i.availability || [])
+          .filter((a) => a.date && dayKey(a.date) >= dayKey(from))
+          .map((a) => ({ date: a.date, left: a.left ?? null, rate: a.rate ?? null })),
+      })),
+      days,
+    },
+  });
 });
 
 /** The partner setting how many of their rooms are open on one day. */
 exports.setAvailability = catchAsync(async (req, res) => {
   mustBeLive(req.partner);
-  const { item, date, left } = req.body || {};
+  const { item, date, left, rate } = req.body || {};
   if (!date) throw ApiError.badRequest('Which day?');
   const stock = await InventoryItem.findOne({ _id: item, partner: req.partner._id });
   if (!stock) throw ApiError.notFound('That is not one of your properties');
 
   const on = new Date(date);
+  const rooms = Math.max(0, Number(left || 0));
+  // An empty rate box means "my usual rate", not "free".
+  const priced = rate === '' || rate == null ? null : Math.max(0, Number(rate) || 0);
+
   const existing = (stock.availability || []).find((a) => new Date(a.date).toDateString() === on.toDateString());
-  if (existing) existing.left = Math.max(0, Number(left || 0));
-  else stock.availability.push({ date: on, left: Math.max(0, Number(left || 0)) });
+  if (existing) {
+    existing.left = rooms;
+    existing.rate = priced;
+  } else {
+    stock.availability.push({ date: on, left: rooms, rate: priced });
+  }
   await stock.save();
 
-  res.json({ success: true, message: 'Availability saved', data: { date: on, left: Math.max(0, Number(left || 0)) } });
+  res.json({
+    success: true,
+    message: 'Availability saved',
+    data: { date: on, left: rooms, rate: priced },
+  });
 });

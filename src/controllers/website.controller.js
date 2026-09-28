@@ -909,6 +909,39 @@ exports.catalogItem = catchAsync(async (req, res) => {
 });
 
 /**
+ * Somebody opened a listing on the website.
+ *
+ * It is counted against the day, so the partner's Performance page can show
+ * the shape of a week rather than one number that only ever goes up.
+ * Nothing about the visitor is recorded — this is a tally, not a trail.
+ *
+ * It answers 204 either way: a counter is not worth failing a page over,
+ * and a listing that has since been taken down is not an error.
+ */
+exports.listingView = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const where = mongoose.isValidObjectId(id) ? { _id: id } : { code: String(id).toUpperCase() };
+
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const item = await InventoryItem.findOne(where).select('views viewDays');
+
+  if (item) {
+    item.views = (item.views || 0) + 1;
+    const same = (item.viewDays || []).find((d) => new Date(d.date).getTime() === today.getTime());
+    if (same) same.count = (same.count || 0) + 1;
+    else item.viewDays.push({ date: today, count: 1 });
+
+    // Ninety days is as far back as the Performance page ever looks.
+    const cutoff = today.getTime() - 90 * 86400000;
+    item.viewDays = item.viewDays.filter((d) => new Date(d.date).getTime() >= cutoff);
+    await item.save({ validateBeforeSave: false });
+  }
+
+  res.status(204).end();
+});
+
+/**
  * The offers the desk has put live, for the Offers screen and the promo
  * strips. A coupon's own code is included because a member has to be able
  * to quote it; how many times it has been used is not.
