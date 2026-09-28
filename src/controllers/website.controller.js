@@ -520,8 +520,8 @@ exports.plans = catchAsync(async (req, res) => {
   const plans = await MembershipPlan.find({ published: true })
     .sort({ sortOrder: 1, price: 1 })
     .select(
-      'code name tagline price billing discount durationMonths persons rooms freeStay ' +
-        'privileges services gifts features popular sortOrder accent',
+      'code name shortLabel tagline blurb price billing discount durationMonths persons rooms ' +
+        'freeStay privileges services gifts features popular sortOrder accent',
     )
     .lean();
   res.set('Cache-Control', 'public, max-age=60');

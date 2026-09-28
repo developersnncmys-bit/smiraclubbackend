@@ -39,13 +39,26 @@ const planSchema = new mongoose.Schema(
     /**
      * The colour the plan wears, on the panel and on the website's pricing
      * page. Named rather than a hex, so each end draws its own gradient from
-     * it and the two cannot drift into slightly different golds.
+     * it and the two cannot drift into slightly different golds. The first
+     * five are the tier colours the website was designed in; the rest are
+     * there for a plan that is not one of the five.
      */
     accent: {
       type: String,
-      enum: ['slate', 'amber', 'violet', 'brand', 'sky', 'emerald', 'rose'],
+      enum: [
+        'silver', 'gold', 'platinum', 'diamond', 'crown',
+        'slate', 'amber', 'violet', 'brand', 'sky', 'emerald', 'rose',
+      ],
       default: 'brand',
     },
+
+    /**
+     * What the website calls it, in the two places the full name will not
+     * fit or will not do: the tier chip wants one short word, and the card
+     * wants a line saying who the plan is for.
+     */
+    shortLabel: { type: String, trim: true, maxlength: 20 },
+    blurb: { type: String, trim: true, maxlength: 160 },
 
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
