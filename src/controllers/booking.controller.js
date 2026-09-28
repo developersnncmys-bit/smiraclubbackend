@@ -57,7 +57,10 @@ const base = crud(Booking, {
   searchable: ['customerName', 'hotel', 'destination', 'code'],
   populate: [
     { path: 'owner', select: 'name code' },
-    { path: 'customer', select: 'name phone tier' },
+    // The card shows the customer's own number and their member id, and
+    // names the travel expert who handled it, so all three come along.
+    { path: 'customer', select: 'name phone email code tier' },
+    { path: 'handledBy.handled', select: 'name code' },
   ],
   ownerField: 'owner',
   // Confirming a booking (or pointing a confirmed one at a partner) sends it on.

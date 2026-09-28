@@ -156,6 +156,40 @@ exports.tripEnquiry = catchAsync(async (req, res) => {
 });
 
 /**
+ * A booking or a signup that is not yet business, put in front of the sales
+ * desk as well.
+ *
+ * Somebody who is not a member, or who has not paid for the membership they
+ * asked for, is a person to call — not a job to file. The booking request or
+ * the signup still exists and still has to be answered; this is the other
+ * half of it, so Sales & Leads shows the work rather than the desk finding
+ * it by reading the Booking page for people with no plan.
+ *
+ * It is never created for a paid-up member: their booking is a booking.
+ */
+async function leadAlongside({ customer, label, tags, destination, pax, travelDate, lines, source, campaign, owner }) {
+  return Lead.create({
+    name: customer.name,
+    phone: customer.phone,
+    email: customer.email || undefined,
+    destination: destination || undefined,
+    pax: pax || undefined,
+    travelDate: travelDate || undefined,
+    source: source || 'Website',
+    campaign: campaign || undefined,
+    label,
+    tags,
+    notes: lines.join('\n'),
+    // Not the visitor's to decide.
+    status: 'New',
+    score: 'Hot',
+    priority: 'High',
+    owner,
+    activities: [{ kind: 'note', text: lines.join('\n'), byName: 'Website' }],
+  });
+}
+
+/**
  * What the member filled in on Complete Your Profile, read field by field.
  * Only the gaps on a customer are filled from it — the desk's own record wins.
  */
@@ -423,6 +457,30 @@ exports.booking = catchAsync(async (req, res) => {
     ],
   });
 
+
+  /**
+   * A request from somebody who is not a member is a sales call waiting to
+   * happen, so it goes to Sales & Leads too. A member's booking does not —
+   * that is already business, and the Booking page is where it belongs.
+   */
+  if (!plan) {
+    await leadAlongside({
+      customer,
+      label: 'Website booking',
+      tags: ['Website booking', 'Not a member'],
+      destination: location || what,
+      pax: guestCount,
+      travelDate: checkIn,
+      source: from.source,
+      campaign: from.campaign,
+      owner,
+      lines: [
+        `Booked "${what}" on the website without a membership`,
+        `Booking ${booking.code} is waiting on the desk to confirm`,
+        ...note,
+      ],
+    });
+  }
   res.status(201).json({
     success: true,
     message: plan ? 'Booking confirmed' : 'Request received',
@@ -494,6 +552,25 @@ exports.membership = catchAsync(async (req, res) => {
     expert: owner,
     activation: { stage: 'Payment pending' },
     timeline: lines.map((note) => ({ step: 'Website', at: new Date(), note })),
+  });
+
+  /**
+   * A membership nobody has paid for is not a member yet — it is somebody
+   * who said yes and needs collecting from. It goes to Sales & Leads until
+   * the money is in, and the Members list only counts the ones that are.
+   */
+  await leadAlongside({
+    customer,
+    label: 'Membership',
+    tags: ['Membership', 'Payment pending', plan.name],
+    source: from.source,
+    campaign: from.campaign,
+    owner,
+    lines: [
+      `Asked for ${plan.name} on the website — ₹${amount.toLocaleString('en-IN')} to collect`,
+      `Membership ${membership.code} stays off the Members list until it is paid`,
+      ...lines,
+    ],
   });
 
   res.status(201).json({
