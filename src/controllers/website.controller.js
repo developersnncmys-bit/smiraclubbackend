@@ -356,11 +356,13 @@ const KIND_TYPE = {
   table: 'Restaurant',
   park: 'Activity', games: 'Activity', spa: 'Activity', luxury: 'Activity', adventure: 'Activity', camping: 'Activity', activity: 'Activity',
   package: 'Package', group: 'Package',
+  flight: 'Transport', train: 'Transport', bus: 'Transport',
 };
 const KIND_LABEL = {
   stay: 'Hotel', hotel: 'Hotel', hourly: 'Hourly stay', 'free-stay': 'Free stay', villa: 'Villa',
   table: 'Restaurant', park: 'Theme park', games: 'Games zone', spa: 'Spa & salon', luxury: 'Luxury experience',
   adventure: 'Adventure', camping: 'Camping', activity: 'Activity', package: 'Package', group: 'Group departure',
+  flight: 'Flight', train: 'Train', bus: 'Bus',
 };
 
 /**
@@ -412,7 +414,11 @@ exports.booking = catchAsync(async (req, res) => {
     location ? `Location: ${location}` : '',
     checkIn ? `Check-in ${show(checkIn)}${checkOut ? ` · Check-out ${show(checkOut)}` : ''}` : '',
     slot ? `When: ${slot}${nightsText ? ` · ${nightsText}` : ''}` : '',
-    `Quoted on the website: ₹${amount.toLocaleString('en-IN')} incl. taxes — confirm the price when you call`,
+    // A flight or a train has no price on the website — there is nothing to
+    // quote, only a route to price up, so do not tell the desk it was quoted.
+    amount > 0
+      ? `Quoted on the website: ₹${amount.toLocaleString('en-IN')} incl. taxes — confirm the price when you call`
+      : 'No price shown on the website — quote this when you call',
     guests.length > 1 ? `Guests: ${guests.join('; ')}` : '',
     gstin ? `GST invoice to ${gstin}` : '',
     b.coupon ? `Coupon typed: ${text(b.coupon, 30)}` : '',
