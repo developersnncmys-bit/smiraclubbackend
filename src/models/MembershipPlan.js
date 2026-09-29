@@ -1,4 +1,10 @@
 const mongoose = require('mongoose');
+
+/** The tier colours the website already knows by name. */
+const ACCENT_NAMES = [
+  'silver', 'gold', 'platinum', 'diamond', 'crown',
+  'slate', 'amber', 'violet', 'brand', 'sky', 'emerald', 'rose',
+];
 const { withCode } = require('../helpers/ids');
 
 /**
@@ -45,11 +51,24 @@ const planSchema = new mongoose.Schema(
      */
     accent: {
       type: String,
-      enum: [
-        'silver', 'gold', 'platinum', 'diamond', 'crown',
-        'slate', 'amber', 'violet', 'brand', 'sky', 'emerald', 'rose',
-      ],
       default: 'brand',
+      trim: true,
+      lowercase: true,
+      /**
+       * One of the tier names, or a colour code of the desk's own.
+       *
+       * It was a fixed list, which meant the only colours a plan could ever
+       * be were the ones somebody thought of in advance. A hex code is
+       * allowed now and the website builds the card's gradient from it, so
+       * a new tier does not need a deploy to get its colour.
+       */
+      validate: {
+        validator: (v) =>
+          !v ||
+          ACCENT_NAMES.includes(v) ||
+          /^#([0-9a-f]{3}|[0-9a-f]{6})$/.test(v),
+        message: 'Use a tier name or a colour code like #b8860b',
+      },
     },
 
     /**
