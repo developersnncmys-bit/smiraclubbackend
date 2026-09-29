@@ -34,6 +34,16 @@ const membershipSchema = new mongoose.Schema(
     paid: { type: Number, default: 0 },
     refund: { type: Number, default: 0 },
 
+    /**
+     * The handle they said they would pay from.
+     *
+     * Nothing is charged on the website — there is no gateway yet — so
+     * this is not a payment, it is a lead on how to collect one. A
+     * membership stays off the Members list until the money is in, and
+     * this is what the desk raises the request against.
+     */
+    upiId: { type: String, trim: true, maxlength: 80 },
+
     status: { type: String, enum: MEMBERSHIP_STATUSES, default: 'New', index: true },
 
     expert: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },

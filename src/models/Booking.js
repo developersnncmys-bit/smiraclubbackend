@@ -73,6 +73,15 @@ const bookingSchema = new mongoose.Schema(
     specialRequests: [String],
     specialNote: String,
 
+    /**
+     * The handle the customer says they will pay from.
+     *
+     * Nothing is charged here — there is no gateway yet — so this is not
+     * a payment, it is a lead on how to collect one. The desk raises the
+     * request against it instead of ringing to ask for it.
+     */
+    upiId: { type: String, trim: true, maxlength: 80 },
+
     source: String,
     channel: String,
     owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },

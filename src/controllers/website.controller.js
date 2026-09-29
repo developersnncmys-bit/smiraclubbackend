@@ -324,6 +324,7 @@ exports.packageBooking = catchAsync(async (req, res) => {
   const nights = count(b.nights, 0, 60);
   const amount = count(b.total, 0, 50000000);
   const gstin = text(b.gstin, 20).toUpperCase();
+  const upiId = text(b.upiId, 80);
   const guests = (Array.isArray(b.guests) ? b.guests : [])
     .slice(0, 20)
     .map((g) => [text(g?.name, 80), text(g?.email, 120), String(g?.phone || '').replace(/\D/g, '').slice(-10)].filter(Boolean).join(' · '))
@@ -342,10 +343,12 @@ exports.packageBooking = catchAsync(async (req, res) => {
     `Quoted on the website: ₹${amount.toLocaleString('en-IN')} incl. taxes — confirm the price when you call`,
     guests.length > 1 ? `Guests: ${guests.join('; ')}` : '',
     gstin ? `GST invoice to ${gstin}` : '',
+    upiId ? `Will pay from UPI ${upiId} — raise the request, nothing was charged here` : 'No UPI given — ask how they want to pay',
     b.coupon ? `Coupon typed: ${text(b.coupon, 30)}` : '',
   ].filter(Boolean);
 
   const booking = await Booking.create({
+    upiId: upiId || undefined,
     customer: customer._id,
     customerName: customer.name,
     bookingType: 'International trip',
@@ -436,6 +439,7 @@ exports.booking = catchAsync(async (req, res) => {
   const guestCount = count(b.pax, 1, 50);
   const amount = count(b.total, 0, 50000000);
   const gstin = text(b.gstin, 20).toUpperCase();
+  const upiId = text(b.upiId, 80);
   const guests = (Array.isArray(b.guests) ? b.guests : [])
     .slice(0, 20)
     .map((g) => [text(g?.name, 80), text(g?.email, 120), String(g?.phone || '').replace(/\D/g, '').slice(-10)].filter(Boolean).join(' · '))
@@ -457,6 +461,7 @@ exports.booking = catchAsync(async (req, res) => {
       : 'No price shown on the website — quote this when you call',
     guests.length > 1 ? `Guests: ${guests.join('; ')}` : '',
     gstin ? `GST invoice to ${gstin}` : '',
+    upiId ? `Will pay from UPI ${upiId} — raise the request, nothing was charged here` : 'No UPI given — ask how they want to pay',
     b.coupon ? `Coupon typed: ${text(b.coupon, 30)}` : '',
   ].filter(Boolean);
 
@@ -485,6 +490,7 @@ exports.booking = catchAsync(async (req, res) => {
     source: from.source,
     channel: 'Website',
     owner,
+    upiId: upiId || undefined,
     specialNote: gstin ? `GST: ${gstin}` : undefined,
     handledBy: { handled: owner },
     activities: [
@@ -519,6 +525,8 @@ exports.booking = catchAsync(async (req, res) => {
       lines: [
         `Booked "${what}" on the website without a membership`,
         `Booking ${booking.code} is waiting on the desk to confirm`,
+        upiId ? `Collect from UPI ${upiId}` : 'No UPI given — ask how they want to pay',
+        upiId ? `Collect from UPI ${upiId}` : 'No UPI given — ask how they want to pay',
         ...note,
       ],
     });
@@ -565,6 +573,8 @@ exports.membership = catchAsync(async (req, res) => {
   const expires = new Date();
   expires.setMonth(expires.getMonth() + months);
 
+  const memberUpi = text(b.upiId, 80);
+
   const lines = [
     `Bought on the website — ${wanted} membership`,
     plan.name.toLowerCase().startsWith(first) ? '' : `The desk has no ${wanted} plan yet — put on ${plan.name}, check with the member`,
@@ -573,10 +583,14 @@ exports.membership = catchAsync(async (req, res) => {
     list(b.privileges).length ? `Privileges: ${list(b.privileges).join(', ')}` : '',
     b.sharing ? 'Wants membership sharing' : '',
     b.coupon ? `Coupon: ${text(b.coupon, 30)}` : '',
+    memberUpi
+      ? `Will pay from UPI ${memberUpi} — raise the request, nothing was charged here`
+      : 'No UPI given — ask how they want to pay',
     from.source !== 'Website' ? `Came from ${from.source}${from.campaign ? ` — campaign "${from.campaign}"` : ''}` : '',
   ].filter(Boolean);
 
   const membership = await Membership.create({
+    upiId: memberUpi || undefined,
     customer: customer._id,
     name: customer.name,
     phone: customer.phone,
@@ -611,6 +625,7 @@ exports.membership = catchAsync(async (req, res) => {
     lines: [
       `Asked for ${plan.name} on the website — ₹${amount.toLocaleString('en-IN')} to collect`,
       `Membership ${membership.code} stays off the Members list until it is paid`,
+      memberUpi ? `Collect from UPI ${memberUpi}` : 'No UPI given — ask how they want to pay',
       ...lines,
     ],
   });

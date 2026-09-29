@@ -119,6 +119,14 @@ const listingSchema = new mongoose.Schema(
         authorisation: str,
       },
     },
+    /**
+     * Where Smira settles up, asked as two things rather than one.
+     *
+     * A bank transfer needs an account, an IFSC and a proof; a UPI payout
+     * needs a handle and nothing else. They were one block, so a partner
+     * who only takes UPI had to leave four boxes empty and the desk could
+     * not tell "not filled in" from "does not apply".
+     */
     bank: {
       holder: str,
       bankName: str,
@@ -126,6 +134,10 @@ const listingSchema = new mongoose.Schema(
       ifsc: str,
       branch: str,
       proofLink: str,
+      /** e.g. name@okhdfcbank. Either this or the account, or both. */
+      upiId: { type: String, trim: true, maxlength: 80 },
+      upiName: { type: String, trim: true, maxlength: 120 },
+      preferred: { type: String, enum: ['Bank transfer', 'UPI', ''], default: '' },
     },
     agreementAccepted: { type: Boolean, default: false },
     agreementAcceptedAt: Date,
