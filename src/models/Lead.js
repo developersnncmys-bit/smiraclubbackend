@@ -30,6 +30,50 @@ const leadSchema = new mongoose.Schema(
     travelDate: Date,
     budget: { type: Number, default: 0 },
 
+    /**
+     * How this person travels, and what they asked for.
+     *
+     * The customised tour form collects all of this and it was flattened
+     * into the notes — one wall of text the booking team had to read
+     * through before they could quote anything, and could not sort or
+     * filter by. It is kept as fields as well, so the desk can see the
+     * requirement at a glance and before they build the booking.
+     *
+     * The first six are the usage questions the desk asks on a call; the
+     * rest is whatever the website form was given.
+     */
+    trip: {
+      yearlyTrips: { type: String, trim: true, maxlength: 60 },
+      hotelPreference: { type: String, trim: true, maxlength: 80 },
+      travelPersons: { type: Number, min: 0 },
+      roomsRequired: { type: Number, min: 0 },
+      lastExpenses: { type: Number, min: 0 },
+      planToTravel: { type: String, trim: true, maxlength: 80 },
+
+      checkIn: Date,
+      checkOut: Date,
+      duration: { type: String, trim: true, maxlength: 60 },
+      dateMode: { type: String, trim: true, maxlength: 30 },
+      adults: { type: Number, min: 0 },
+      children: { type: Number, min: 0 },
+      childAges: [{ type: Number, min: 0, max: 21 }],
+      pets: { type: Boolean, default: false },
+      occasion: { type: String, trim: true, maxlength: 60 },
+      mealPlan: { type: String, trim: true, maxlength: 60 },
+      mealType: { type: String, trim: true, maxlength: 40 },
+      transport: [{ type: String, trim: true, maxlength: 60 }],
+      pickupFrom: { type: String, trim: true, maxlength: 120 },
+      pickupTo: { type: String, trim: true, maxlength: 120 },
+      dropFrom: { type: String, trim: true, maxlength: 120 },
+      dropTo: { type: String, trim: true, maxlength: 120 },
+      returnTransfer: { type: Boolean, default: false },
+      sightseeing: { type: String, trim: true, maxlength: 400 },
+      extras: [{ type: String, trim: true, maxlength: 80 }],
+      support: [{ type: String, trim: true, maxlength: 80 }],
+      needs: { type: String, trim: true, maxlength: 600 },
+      note: { type: String, trim: true, maxlength: 1000 },
+    },
+
     status: { type: String, enum: LEAD_STAGES, default: 'New', index: true },
     /** The campaign that brought it in, by name — for leads and sales by campaign. */
     campaign: { type: String, trim: true, maxlength: 80 },

@@ -120,7 +120,7 @@ exports.tripEnquiry = catchAsync(async (req, res) => {
     `Transport: ${list(b.transport, 6).join(', ') || '—'}`,
     `Pick-up: ${text(b.pickupFrom, 40)} → ${text(b.pickupTo, 40)} · Drop: ${text(b.dropFrom, 40)} → ${text(b.dropTo, 40)}` +
       ` · Return transfer: ${yes(b.returnTransfer)}`,
-    `Sightseeing: ${text(b.sightseeing, 5) || '—'}`,
+    `Sightseeing: ${text(b.sightseeing, 200) || '—'}`,
     `Meals: ${text(b.mealPlan, 60) || '—'} (${text(b.mealType, 20) || '—'})`,
     list(b.extras).length ? `Preferences: ${list(b.extras).join(', ')}` : '',
     list(b.support).length ? `Support: ${list(b.support).join(', ')}` : '',
@@ -139,6 +139,42 @@ exports.tripEnquiry = catchAsync(async (req, res) => {
     label: 'International',
     tags: ['International', 'Customised tour'],
     notes: brief,
+    /**
+     * The same answers as fields, not only as the brief above.
+     *
+     * The brief reads well and the desk still gets it; it is no use for
+     * seeing at a glance how many rooms somebody wants, or for sorting
+     * the morning's leads by who is travelling soonest.
+     */
+    trip: {
+      hotelPreference: text(b.hotel, 80),
+      travelPersons: adults + childAges.length,
+      roomsRequired: rooms,
+      planToTravel: text(b.duration, 80) || text(b.dateMode, 80),
+
+      checkIn,
+      checkOut,
+      duration: text(b.duration, 60),
+      dateMode: text(b.dateMode, 30),
+      adults,
+      children: childAges.length,
+      childAges,
+      pets: Boolean(b.pets),
+      occasion: text(b.occasion, 60),
+      mealPlan: text(b.mealPlan, 60),
+      mealType: text(b.mealType, 40),
+      transport: list(b.transport, 6),
+      pickupFrom: text(b.pickupFrom, 120),
+      pickupTo: text(b.pickupTo, 120),
+      dropFrom: text(b.dropFrom, 120),
+      dropTo: text(b.dropTo, 120),
+      returnTransfer: Boolean(b.returnTransfer),
+      sightseeing: text(b.sightseeing, 400),
+      extras: list(b.extras),
+      support: list(b.support),
+      needs: text(b.needs, 600),
+      note: text(b.note, 1000),
+    },
     // Not the visitor's to decide.
     status: 'New',
     score: 'Warm',
