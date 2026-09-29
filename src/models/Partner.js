@@ -22,7 +22,19 @@ const listingSchema = new mongoose.Schema(
       accountType: { type: String, enum: ['Hotel / Property', 'Channel manager', ''] },
     },
     property: {
-      type: { type: String, enum: ['Hotel', 'Resort', 'Homestay', 'Villa', 'Camp', 'Lifestyle', ''] },
+      /**
+       * What kind of place this is, which decides what the listing form
+       * asks for. The list was stays only, so a restaurant or a spa had to
+       * register as a hotel and then be asked for bed types.
+       */
+      type: {
+        type: String,
+        enum: [
+          'Hotel', 'Resort', 'Homestay', 'Villa', 'Camp',
+          'Restaurant', 'Spa & Salon', 'Games Zone', 'Theme Park',
+          'Activity', 'Transport', 'Lifestyle', '',
+        ],
+      },
       name: str,
       starCategory: str,
       contactName: str,
