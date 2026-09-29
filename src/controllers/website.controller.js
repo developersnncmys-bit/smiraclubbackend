@@ -1039,3 +1039,66 @@ exports.enquiry = catchAsync(async (req, res) => {
     data: { reference: lead.code },
   });
 });
+
+/* -- The member's wishlist ------------------------------------------------ */
+
+/** Newest first, and only the fields the cards need. */
+const wishlistOut = (member) =>
+  [...(member.wishlist || [])]
+    .sort((a, b) => new Date(b.savedAt || 0) - new Date(a.savedAt || 0))
+    .map((w) => ({
+      href: w.href,
+      name: w.name || '',
+      place: w.place || '',
+      image: w.image || '',
+      savedAt: w.savedAt,
+    }));
+
+exports.wishlistRead = catchAsync(async (req, res) => {
+  res.json({ success: true, data: wishlistOut(req.member) });
+});
+
+/**
+ * Save something, or take it off again.
+ *
+ * The browser sends what it has as well, because somebody browses signed
+ * out, saves a few things, and only then signs in. Those are merged rather
+ * than thrown away — the alternative is a member watching their list empty
+ * itself the moment they log in.
+ *
+ * `href` is the identity, so saving the same page twice is not two entries.
+ */
+exports.wishlistWrite = catchAsync(async (req, res) => {
+  const member = req.member;
+  const current = member.wishlist || [];
+
+  const clean = (w) => ({
+    href: text(w?.href, 400),
+    name: text(w?.name, 200),
+    place: text(w?.place, 200),
+    image: text(w?.image, 600),
+    savedAt: w?.savedAt ? new Date(w.savedAt) : new Date(),
+  });
+
+  const byHref = new Map(current.map((w) => [w.href, w]));
+
+  // Anything the browser was holding before they signed in.
+  (Array.isArray(req.body?.merge) ? req.body.merge : []).slice(0, 200).forEach((w) => {
+    const item = clean(w);
+    if (item.href && !byHref.has(item.href)) byHref.set(item.href, item);
+  });
+
+  const save = req.body?.save ? clean(req.body.save) : null;
+  const drop = text(req.body?.remove, 400);
+
+  if (save?.href) byHref.set(save.href, { ...byHref.get(save.href), ...save });
+  if (drop) byHref.delete(drop);
+
+  // A wishlist is a shortlist. Past a couple of hundred it is a scrape.
+  member.wishlist = [...byHref.values()]
+    .sort((a, b) => new Date(b.savedAt || 0) - new Date(a.savedAt || 0))
+    .slice(0, 200);
+  await member.save({ validateBeforeSave: false });
+
+  res.json({ success: true, data: wishlistOut(member) });
+});

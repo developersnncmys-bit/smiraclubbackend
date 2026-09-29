@@ -61,6 +61,26 @@ const customerSchema = new mongoose.Schema(
     tags: [String],
     notes: String,
 
+    /**
+     * What they have saved on the website.
+     *
+     * It lived in the browser, which meant a member who saved six villas
+     * on their phone opened the site on a laptop to an empty list — and
+     * the desk, who could have called them about those six villas, never
+     * knew. `href` is the identity; the rest is enough to draw the card
+     * again without looking anything up.
+     */
+    wishlist: [
+      {
+        _id: false,
+        href: { type: String, required: true, trim: true, maxlength: 400 },
+        name: { type: String, trim: true, maxlength: 200 },
+        place: { type: String, trim: true, maxlength: 200 },
+        image: { type: String, trim: true, maxlength: 600 },
+        savedAt: { type: Date, default: Date.now },
+      },
+    ],
+
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   },

@@ -60,5 +60,7 @@ router.get('/offers', c.liveOffers);
 router.post('/member/otp', perAddress, perPhone, c.memberOtpRequest);
 router.post('/member/verify', perAddress, c.memberOtpVerify);
 router.get('/member/me', protectMember, c.memberMe);
+router.get('/member/wishlist', protectMember, c.wishlistRead);
+router.post('/member/wishlist', protectMember, c.wishlistWrite);
 
 module.exports = router;
