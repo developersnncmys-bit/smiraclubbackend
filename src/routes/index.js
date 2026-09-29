@@ -41,6 +41,8 @@ router.use('/audit-logs', require('./auditLog.routes'));
 // Partners sign in here, and only here. See middleware/partnerAuth.js.
 router.use('/partner-portal', require('./partnerPortal.routes'));
 router.use('/uploads', require('./upload.routes'));
+router.use('/settings', require('./setting.routes'));
+router.use('/scheduled-reports', require('./scheduledReport.routes'));
 
 // What the public website sends in, with nobody signed in.
 router.use('/website', require('./website.routes'));
@@ -55,7 +57,7 @@ router.get('/', (req, res) => {
       'membership-plans', 'memberships', 'bookings', 'tickets', 'partners',
       'inventory', 'payments', 'invoices', 'refunds', 'expenses', 'approvals',
       'whatsapp', 'automations', 'rewards', 'referrals', 'offers',
-      'dashboard', 'reports', 'revenue', 'audit-logs', 'partner-portal', 'website', 'uploads',
+      'dashboard', 'reports', 'revenue', 'audit-logs', 'partner-portal', 'website', 'uploads', 'settings', 'scheduled-reports',
     ],
   });
 });

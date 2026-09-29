@@ -199,3 +199,111 @@ exports.builderOptions = catchAsync(async (req, res) => {
     },
   });
 });
+
+/**
+ * What the messaging actually did, counted from the campaigns that were
+ * sent rather than from a set of numbers typed into the panel's source.
+ *
+ * A campaign carries its own tallies because the WhatsApp provider reports
+ * them back per send, so summing them is the whole job.
+ */
+exports.messaging = catchAsync(async (req, res) => {
+  const Campaign = require('../models/Campaign');
+  const [totals] = await Campaign.aggregate([
+    {
+      $group: {
+        _id: null,
+        campaigns: { $sum: 1 },
+        sent: { $sum: '$sent' },
+        delivered: { $sum: '$delivered' },
+        read: { $sum: '$read' },
+        replied: { $sum: '$replied' },
+        leads: { $sum: '$leads' },
+        sales: { $sum: '$sales' },
+        revenue: { $sum: '$revenue' },
+        cost: { $sum: '$cost' },
+      },
+    },
+  ]);
+
+  const t = totals || {};
+  const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : null);
+
+  res.json({
+    success: true,
+    data: {
+      campaigns: t.campaigns || 0,
+      sent: t.sent || 0,
+      delivered: t.delivered || 0,
+      read: t.read || 0,
+      replied: t.replied || 0,
+      leads: t.leads || 0,
+      sales: t.sales || 0,
+      revenue: t.revenue || 0,
+      cost: t.cost || 0,
+      deliveredRate: pct(t.delivered || 0, t.sent || 0),
+      readRate: pct(t.read || 0, t.delivered || 0),
+      replyRate: pct(t.replied || 0, t.delivered || 0),
+      // What a rupee of messaging brought back.
+      returnOnSpend: t.cost ? Math.round(((t.revenue || 0) / t.cost) * 10) / 10 : null,
+    },
+  });
+});
+
+/**
+ * What members actually did, over a window.
+ *
+ * The panel showed nine engagement figures that were constants in its own
+ * source — app logins, searches, wishlist adds and the rest — so the
+ * numbers never moved and meant nothing. Only some of those are things
+ * this system records. The ones that are come back with a count; the ones
+ * that are not come back `null`, so the screen can say "not tracked yet"
+ * rather than print a number nobody measured.
+ */
+exports.engagement = catchAsync(async (req, res) => {
+  const InventoryItem = require('../models/InventoryItem');
+  const Referral = require('../models/Referral');
+  const Conversation = require('../models/Conversation');
+
+  const days = Math.min(365, Math.max(1, Number(req.query.days) || 30));
+  const since = new Date(Date.now() - days * 86400000);
+
+  const [listings, bookings, enquiries, referrals, conversations] = await Promise.all([
+    InventoryItem.find().select('views viewDays').lean(),
+    Booking.countDocuments({ createdAt: { $gte: since } }),
+    Lead.countDocuments({ createdAt: { $gte: since } }),
+    Referral.countDocuments({ createdAt: { $gte: since } }),
+    Conversation.countDocuments({ updatedAt: { $gte: since } }),
+  ]);
+
+  const listingViews = listings.reduce(
+    (sum, i) =>
+      sum
+      + (i.viewDays || [])
+        .filter((v) => new Date(v.date) >= since)
+        .reduce((n, v) => n + (v.count || 0), 0),
+    0,
+  );
+
+  res.json({
+    success: true,
+    data: {
+      days,
+      /** Counted. */
+      listingViews,
+      bookings,
+      enquiries,
+      referrals,
+      whatsapp: conversations,
+      /**
+       * Not counted. The website does not report these yet, and a made-up
+       * number on a report is worse than an honest gap.
+       */
+      logins: null,
+      searches: null,
+      wishlist: null,
+      offersViewed: null,
+      giftsClaimed: null,
+    },
+  });
+});
