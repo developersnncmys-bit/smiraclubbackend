@@ -31,8 +31,9 @@ const listingSchema = new mongoose.Schema(
         type: String,
         enum: [
           'Hotel', 'Resort', 'Homestay', 'Villa', 'Camp',
-          'Restaurant', 'Spa & Salon', 'Games Zone', 'Theme Park',
-          'Activity', 'Transport', 'Lifestyle', '',
+          'Restaurant', 'Spa & Salon', 'Games Zone', 'Theme Park', 'Water Park',
+          'Activity', 'Package', 'Group Departure',
+          'Flight', 'Train & Bus', 'Transport', 'Lifestyle', '',
         ],
       },
       name: str,

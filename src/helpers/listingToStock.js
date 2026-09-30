@@ -25,7 +25,12 @@ const CATEGORY_OF = {
   'Spa & Salon': 'Spa and salon',
   'Games Zone': 'Games',
   'Theme Park': 'Attractions',
+  'Water Park': 'Attractions',
   Activity: 'Activities',
+  Package: 'Packages',
+  'Group Departure': 'Packages',
+  Flight: 'Flights',
+  'Train & Bus': 'Transport',
   Transport: 'Transport',
   Lifestyle: 'Experiences',
 };
