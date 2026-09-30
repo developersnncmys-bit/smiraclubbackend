@@ -92,6 +92,19 @@ const listingSchema = new mongoose.Schema(
      * behave.
      */
     details: {
+      /**
+       * What the cards print beside the name.
+       *
+       * A rating and a review count are the first thing a member looks at,
+       * and a partner listing without them read as untrusted next to the
+       * site's own. The desk sets them — they are not the partner's to
+       * claim — and `tag` is the line under the name, "Spa & Wellness"
+       * or "Hair, skin, Spa & grooming".
+       */
+      tag: { type: String, trim: true, maxlength: 80 },
+      rating: { type: Number, min: 0, max: 5 },
+      reviews: { type: Number, min: 0 },
+      hours: { type: String, trim: true, maxlength: 60 },
       /** "Entire 3-Bedroom Villa", "Deluxe Double Room". */
       layout: { type: String, trim: true, maxlength: 120 },
       bedrooms: num,

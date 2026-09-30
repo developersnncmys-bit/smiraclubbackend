@@ -70,6 +70,10 @@ const inventorySchema = new mongoose.Schema(
      * by the desk here.
      */
     details: {
+      tag: String,
+      rating: Number,
+      reviews: Number,
+      hours: String,
       layout: String,
       bedrooms: Number,
       beds: String,
