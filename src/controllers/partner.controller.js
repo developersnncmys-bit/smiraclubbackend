@@ -3,6 +3,7 @@ const Booking = require('../models/Booking');
 const ApiError = require('../helpers/ApiError');
 const catchAsync = require('../helpers/catchAsync');
 const { crud } = require('../helpers/crud');
+const { publishListing } = require('../helpers/listingToStock');
 const { record } = require('../helpers/audit');
 
 const base = crud(Partner, {
@@ -138,8 +139,32 @@ exports.goLive = catchAsync(async (req, res) => {
   partner.activities.push({ at: new Date(), text: `Contract signed — put live by ${req.user.name}` });
   await partner.save();
 
+  /**
+   * Going live is what puts them on the website.
+   *
+   * Until now it only changed a word on their record: their rooms, rates
+   * and photographs sat on the partner, and the website reads Travel
+   * Inventory, so somebody had to type the whole listing in again before a
+   * member could see them. This is that step.
+   *
+   * It is not allowed to fail the approval. A partner who is live with no
+   * stock is a five-minute fix for the desk; an approval that errors
+   * halfway leaves the record in a state nobody asked for.
+   */
+  let stock = null;
+  try {
+    stock = await publishListing(partner, { by: req.user._id });
+    partner.activities.push({
+      at: new Date(),
+      text: `On the website as ${stock.code} — set the markup in Travel Inventory`,
+    });
+  } catch (err) {
+    partner.activities.push({ at: new Date(), text: `Could not put on the website: ${err.message}` });
+  }
+  await partner.save({ validateBeforeSave: false });
+
   await record(req, 'approve', 'Partner', partner._id, `${partner.name} is live`);
-  res.json({ success: true, data: partner });
+  res.json({ success: true, data: partner, stock: stock ? { id: stock._id, code: stock.code } : null });
 });
 
 /** Papers checked. */
