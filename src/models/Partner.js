@@ -78,6 +78,78 @@ const listingSchema = new mongoose.Schema(
       rooms: [{ type: String, trim: true, maxlength: 500 }],
     },
 
+    /**
+     * Everything the website's own detail pages print.
+     *
+     * The form asked for rooms, rates and a description, and the pages
+     * show a great deal more than that: how the place is laid out, who
+     * hosts it, what is nearby, what the rules are. A partner listing
+     * that only fills a third of the page looks like an afterthought
+     * beside the hand-written ones, so the form asks for the rest.
+     *
+     * None of it is compulsory. A partner who leaves a section empty
+     * simply does not get that section, which is how the screens already
+     * behave.
+     */
+    details: {
+      /** "Entire 3-Bedroom Villa", "Deluxe Double Room". */
+      layout: { type: String, trim: true, maxlength: 120 },
+      bedrooms: num,
+      beds: { type: String, trim: true, maxlength: 80 },
+      baths: num,
+      sleeps: num,
+      extraGuests: num,
+      unitType: { type: String, trim: true, maxlength: 60 },
+
+      /** The one line on the card, under the price. */
+      highlight: { type: String, trim: true, maxlength: 400 },
+      /** "Breakfast available at extra charges", and the like. */
+      notes: [{ type: String, trim: true, maxlength: 160 }],
+      freeCancellation: { type: Boolean, default: false },
+      taxes: num,
+
+      /** Who runs it, in their own words. */
+      host: {
+        title: { type: String, trim: true, maxlength: 120 },
+        speaks: { type: String, trim: true, maxlength: 160 },
+        blurb: { type: String, trim: true, maxlength: 1000 },
+      },
+
+      /** What is near enough to walk or drive to. */
+      nearby: [
+        { _id: false, place: { type: String, trim: true, maxlength: 120 }, km: { type: String, trim: true, maxlength: 30 } },
+      ],
+
+      /** The rooms of the property itself, as the layout section draws them. */
+      spaces: [
+        {
+          _id: false,
+          name: { type: String, trim: true, maxlength: 80 },
+          floor: { type: String, trim: true, maxlength: 60 },
+          tag: { type: String, trim: true, maxlength: 40 },
+          images: [{ type: String, trim: true, maxlength: 600 }],
+          lines: [{ type: String, trim: true, maxlength: 200 }],
+        },
+      ],
+
+      /** What the price covers. */
+      included: [{ type: String, trim: true, maxlength: 160 }],
+
+      /** The rules, said in full rather than ticked. */
+      ruleNotes: [
+        { _id: false, title: { type: String, trim: true, maxlength: 80 }, body: { type: String, trim: true, maxlength: 400 } },
+      ],
+
+      /** Check-in, guests, cancellation, house rules. */
+      guidelines: [
+        {
+          _id: false,
+          title: { type: String, trim: true, maxlength: 80 },
+          lines: [{ type: String, trim: true, maxlength: 300 }],
+        },
+      ],
+    },
+
     // Step 3 — amenities and rules
     amenities: [{ type: String, trim: true, maxlength: 60 }],
     facilities: [{ type: String, trim: true, maxlength: 60 }],

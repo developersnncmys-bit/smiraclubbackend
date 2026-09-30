@@ -127,6 +127,8 @@ async function publishListing(partner, { by } = {}) {
     rooms,
     units,
     baseRate: num(listing.pricing?.partnerRate),
+    // Everything the detail pages print, exactly as the partner gave it.
+    details: listing.details || {},
   };
 
   const already = await InventoryItem.findOne({ partner: partner._id });

@@ -896,6 +896,12 @@ function forWebsite(item) {
     checkOut: item.checkOut || '',
     amenities: item.amenities || [],
     images: item.images || [],
+    /**
+     * The rest of what a detail page draws. Nothing here is Smira's own
+     * business — it is the property describing itself — so it goes out
+     * whole, unlike the rates above it.
+     */
+    details: item.details || {},
     /** What a member pays, and what it would cost without the membership. */
     price: member,
     was: member < selling ? selling : 0,

@@ -4,7 +4,7 @@ const catchAsync = require('../helpers/catchAsync');
 
 /** Scans and photographs of paperwork. Nothing else gets in. */
 const ALLOWED = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'application/pdf'];
-const MAX_BYTES = 5 * 1024 * 1024;
+const MAX_BYTES = 15 * 1024 * 1024;
 
 /**
  * A file arrives as a data URL rather than multipart.
@@ -23,7 +23,7 @@ function decode(dataUrl) {
   }
   const data = Buffer.from(m[2], 'base64');
   if (!data.length) throw ApiError.badRequest('That file is empty');
-  if (data.length > MAX_BYTES) throw ApiError.badRequest('That file is over 5 MB — send a smaller scan');
+  if (data.length > MAX_BYTES) throw ApiError.badRequest('That file is over 15 MB — send a smaller one');
   return { contentType, data };
 }
 

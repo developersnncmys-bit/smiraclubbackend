@@ -8,11 +8,11 @@ const c = require('../controllers/upload.controller');
 /**
  * Paperwork, from the desk or from the partner themselves.
  *
- * A 5 MB file is about 6.7 MB once it is base64, so these routes take a
- * bigger body than the rest of the API, which stays at 2 MB. The cap is
- * enforced on the decoded bytes in the controller either way.
+ * A 15 MB photograph is about 20 MB once it is base64, so these routes
+ * take a much bigger body than the rest of the API, which stays at 2 MB.
+ * The cap is enforced on the decoded bytes in the controller either way.
  */
-const body = express.json({ limit: '8mb' });
+const body = express.json({ limit: '22mb' });
 
 const perAddress = rateLimit({
   windowMs: 60 * 60 * 1000,

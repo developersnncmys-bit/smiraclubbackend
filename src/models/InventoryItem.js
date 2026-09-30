@@ -63,6 +63,32 @@ const inventorySchema = new mongoose.Schema(
 
     rooms: [roomSchema],
 
+    /**
+     * What the website's detail pages print beyond the basics: how the
+     * place is laid out, who hosts it, what is nearby, the rules and the
+     * guidelines. Filled from the partner's listing when they go live, or
+     * by the desk here.
+     */
+    details: {
+      layout: String,
+      bedrooms: Number,
+      beds: String,
+      baths: Number,
+      sleeps: Number,
+      extraGuests: Number,
+      unitType: String,
+      highlight: String,
+      notes: [String],
+      freeCancellation: { type: Boolean, default: false },
+      taxes: Number,
+      host: { title: String, speaks: String, blurb: String },
+      nearby: [{ _id: false, place: String, km: String }],
+      spaces: [{ _id: false, name: String, floor: String, tag: String, images: [String], lines: [String] }],
+      included: [String],
+      ruleNotes: [{ _id: false, title: String, body: String }],
+      guidelines: [{ _id: false, title: String, lines: [String] }],
+    },
+
     /** Reserved by tier and by channel, so one cannot eat everything. */
     allocation: {
       tiers: {
