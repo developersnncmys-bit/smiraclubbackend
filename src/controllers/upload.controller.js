@@ -68,9 +68,17 @@ exports.read = catchAsync(async (req, res) => {
   const doc = await Upload.findById(req.params.id).select('+data').lean();
   if (!doc) throw ApiError.notFound('That file is not here');
 
-  res.set('Content-Type', doc.contentType);
-  res.set('Content-Length', String(doc.size));
+  /**
+   * A lean read hands back the driver's own Binary wrapper, not a Node
+   * Buffer — and Express, handed an object, turns it into JSON. So every
+   * photograph was served as its own base64 text in quotation marks: the
+   * right length, the right content type, and not an image. Unwrap it.
+   */
+  const bytes = Buffer.isBuffer(doc.data) ? doc.data : Buffer.from(doc.data?.buffer || doc.data);
+
+  res.type(doc.contentType);
+  res.set('Content-Length', String(bytes.length));
   res.set('Cache-Control', 'private, max-age=3600');
   res.set('Content-Disposition', `inline; filename="${doc.filename.replace(/"/g, '')}"`);
-  res.send(doc.data);
+  res.end(bytes);
 });
