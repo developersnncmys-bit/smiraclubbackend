@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
 const Lead = require('../models/Lead');
 const Booking = require('../models/Booking');
+const Ticket = require('../models/Ticket');
+const { TICKET_CATEGORIES } = require('../config/constants');
 const Customer = require('../models/Customer');
 const User = require('../models/User');
 const Membership = require('../models/Membership');
@@ -1165,6 +1167,79 @@ exports.flashOffers = catchAsync(async (req, res) => {
         },
       };
     }),
+  });
+});
+
+/**
+ * Somebody asking the desk for help, from Get Help on the website.
+ *
+ * It opens a ticket on Support / Complaints, which is where the desk
+ * already works — rather than an email nobody owns or a form that only
+ * says "thanks". The SLA clock starts the moment it is saved, so a
+ * complaint raised at midnight is already counting when the desk opens.
+ *
+ * What the visitor may set is what they know: the kind of problem, what
+ * happened, and which booking it is about. The priority, the stage and
+ * who it belongs to are the desk's, not theirs — a visitor marking their
+ * own complaint Critical would put it in front of a hotel that has
+ * actually burnt down.
+ */
+exports.support = catchAsync(async (req, res) => {
+  const b = req.body || {};
+
+  const name = text(b.name, 80);
+  const phone = String(b.phone || '').replace(/\D/g, '').slice(-10);
+  const email = text(b.email, 120).toLowerCase();
+  const description = text(b.description, 2000);
+  const reference = text(b.reference, 40).toUpperCase();
+
+  if (name.length < 2) throw ApiError.badRequest('Tell us who you are');
+  if (!/^[6-9]\d{9}$/.test(phone)) throw ApiError.badRequest('Enter a 10-digit mobile number');
+  if (email && !/^\S+@\S+\.\S+$/.test(email)) throw ApiError.badRequest('That email does not look right');
+  if (description.length < 10) throw ApiError.badRequest('Tell us a little more about what happened');
+
+  const wanted = text(b.category, 40);
+  const category = TICKET_CATEGORIES.includes(wanted) ? wanted : 'Customer service';
+
+  const owner = await pickDeskOwner();
+  const customer = await customerFor({ name, phone, email, profile: b.profile }, owner);
+  const plan = await memberPlanOf(customer);
+  const from = attribution(b.attribution);
+
+  // A booking id they quoted, if we hold one. Nothing is refused over it —
+  // a wrong id is still a complaint.
+  const booking = reference ? await Booking.findOne({ code: reference }) : null;
+
+  const lines = [
+    `Raised on the website — ${category}`,
+    reference ? `About ${reference}${booking ? '' : ' — no booking here matches that id, check with them'}` : '',
+    plan ? `${plan} member` : 'Not a member',
+    from.source !== 'Website' ? `Came from ${from.source}` : '',
+  ].filter(Boolean);
+
+  const ticket = await Ticket.create({
+    customer: customer._id,
+    customerName: customer.name,
+    phone: customer.phone,
+    category,
+    subCategory: text(b.subCategory, 60) || undefined,
+    description,
+    booking: booking?._id,
+    hotel: booking?.hotel || undefined,
+    executive: owner,
+    // Not the visitor's to set — see above.
+    priority: 'Medium',
+    stage: 'New',
+    timeline: [
+      { channel: 'Website', who: customer.name, text: description },
+      ...lines.map((line) => ({ channel: 'Website', who: 'Website', text: line })),
+    ],
+  });
+
+  res.status(201).json({
+    success: true,
+    message: 'Our desk has your complaint',
+    data: { reference: ticket.code, category, raisedOn: ticket.createdAt },
   });
 });
 

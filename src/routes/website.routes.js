@@ -55,6 +55,20 @@ router.get('/plans', c.plans);
 router.get('/catalog', c.catalog);
 router.get('/catalog/:id', c.catalogItem);
 router.post('/catalog/:id/view', perView, c.listingView);
+// A complaint from Get Help. Capped: an open form on a public site is a
+// way to fill somebody's queue with noise.
+router.post(
+  '/support',
+  rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: 10,
+    message: { success: false, message: 'That is a lot of complaints — call the desk instead' },
+    standardHeaders: true,
+    legacyHeaders: false,
+  }),
+  c.support,
+);
+
 router.get('/offers', c.liveOffers);
 // The short ones, with the listing and the clock attached.
 router.get('/offers/flash', c.flashOffers);
