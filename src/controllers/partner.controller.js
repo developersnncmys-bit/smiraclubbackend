@@ -5,6 +5,9 @@ const catchAsync = require('../helpers/catchAsync');
 const { crud } = require('../helpers/crud');
 const { publishListing } = require('../helpers/listingToStock');
 const { record } = require('../helpers/audit');
+const Offer = require('../models/Offer');
+const InventoryItem = require('../models/InventoryItem');
+const { createFlash, stopFlash, flashOffersOf } = require('../helpers/flashOffers');
 
 const base = crud(Partner, {
   name: 'Partner',
@@ -287,4 +290,57 @@ exports.payables = catchAsync(async (req, res) => {
       pending: Math.max(0, Number(b.vendorCost || 0) - Number(b.vendorPaid || 0)),
     })),
   });
+});
+
+/* -- Flash offers, from the desk's side ---------------------------------- */
+
+/**
+ * The same short discounts the partner raises in their portal, from the
+ * Partners page — because a partner who rings the desk to ask for one
+ * should not be told to go and do it themselves.
+ */
+exports.flashOffers = catchAsync(async (req, res) => {
+  const partner = await Partner.findById(req.params.id).select('_id');
+  if (!partner) throw ApiError.notFound('No such partner');
+
+  const rows = await flashOffersOf(partner._id);
+  // What there is to discount comes back with it, so the desk picks from
+  // the partner's own listings rather than typing an id.
+  const listings = await InventoryItem.find({
+    partner: partner._id,
+    status: { $in: ['Active', 'Limited', 'Low'] },
+  })
+    .select('code name category')
+    .lean();
+
+  res.json({
+    success: true,
+    count: rows.length,
+    data: rows,
+    listings: listings.map((l) => ({ ref: String(l._id), id: l.code, name: l.name, category: l.category })),
+  });
+});
+
+exports.createFlashOffer = catchAsync(async (req, res) => {
+  const partner = await Partner.findById(req.params.id);
+  if (!partner) throw ApiError.notFound('No such partner');
+
+  const offer = await createFlash(partner, req.body || {}, { raisedBy: 'Desk', by: req.user?._id });
+  await record(req, {
+    action: 'Flash offer raised',
+    entity: 'Partner',
+    entityId: partner._id,
+    after: { offer: offer.code, percent: offer.value, endsOn: offer.endsOn },
+  });
+
+  const rows = await flashOffersOf(partner._id);
+  res.status(201).json({ success: true, message: 'Flash offer is live', data: rows });
+});
+
+exports.stopFlashOffer = catchAsync(async (req, res) => {
+  const offer = await Offer.findOne({ _id: req.params.offerId, partner: req.params.id, flash: true });
+  if (!offer) throw ApiError.notFound('No such flash offer');
+  await stopFlash(offer);
+  const rows = await flashOffersOf(req.params.id);
+  res.json({ success: true, message: 'That offer has stopped', data: rows });
 });

@@ -25,6 +25,20 @@ const offerSchema = new mongoose.Schema(
 
     status: { type: String, enum: ['Draft', 'Live', 'Paused', 'Expired'], default: 'Draft', index: true },
 
+    /**
+     * A flash offer: a partner's own short discount on their own listing.
+     *
+     * It is an ordinary offer in every other respect, so it shows on the
+     * desk's Offers page beside the ones the desk wrote. What makes it its
+     * own thing is who raised it and what it is against: a partner cutting
+     * their own rate for a few hours needs nobody's approval, because the
+     * only price it can move is theirs.
+     */
+    flash: { type: Boolean, default: false, index: true },
+    partner: { type: mongoose.Schema.Types.ObjectId, ref: 'Partner', index: true },
+    listing: { type: mongoose.Schema.Types.ObjectId, ref: 'InventoryItem' },
+    raisedBy: { type: String, enum: ['Partner', 'Desk', ''], default: '' },
+
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   },

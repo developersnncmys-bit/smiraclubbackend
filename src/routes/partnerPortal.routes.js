@@ -59,4 +59,9 @@ router.get('/performance', c.performance);
 router.get('/availability', c.availability);
 router.patch('/availability', c.setAvailability);
 
+// A short discount on their own listing, raised and stopped by them.
+router.get('/flash-offers', c.flashOffers);
+router.post('/flash-offers', c.createFlashOffer);
+router.post('/flash-offers/:id/stop', c.stopFlashOffer);
+
 module.exports = router;

@@ -56,6 +56,8 @@ router.get('/catalog', c.catalog);
 router.get('/catalog/:id', c.catalogItem);
 router.post('/catalog/:id/view', perView, c.listingView);
 router.get('/offers', c.liveOffers);
+// The short ones, with the listing and the clock attached.
+router.get('/offers/flash', c.flashOffers);
 
 router.post('/member/otp', perAddress, perPhone, c.memberOtpRequest);
 router.post('/member/verify', perAddress, c.memberOtpVerify);

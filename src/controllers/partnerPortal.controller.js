@@ -6,6 +6,8 @@ const OtpChallenge = require('../models/OtpChallenge');
 const Booking = require('../models/Booking');
 const InventoryItem = require('../models/InventoryItem');
 const Ticket = require('../models/Ticket');
+const Offer = require('../models/Offer');
+const { createFlash, stopFlash, flashOffersOf } = require('../helpers/flashOffers');
 const ApiError = require('../helpers/ApiError');
 const catchAsync = require('../helpers/catchAsync');
 const sms = require('../helpers/sms');
@@ -711,4 +713,34 @@ exports.setAvailability = catchAsync(async (req, res) => {
     message: 'Availability saved',
     data: { date: on, left: rooms, rate: priced },
   });
+});
+
+/* -- Flash offers -------------------------------------------------------- */
+
+/**
+ * A partner's own short discounts, and the two things they do with them.
+ *
+ * A room still empty at four o'clock is worth less than a discounted room,
+ * and the partner is the only one who knows that in time to act on it. So
+ * they raise it themselves and it ends on the clock they set. The rules —
+ * how deep, how long, one at a time per listing — live in the helper, next
+ * to the desk's own door onto the same thing.
+ */
+exports.flashOffers = catchAsync(async (req, res) => {
+  const rows = await flashOffersOf(req.partner._id);
+  res.json({ success: true, count: rows.length, data: rows });
+});
+
+exports.createFlashOffer = catchAsync(async (req, res) => {
+  await createFlash(req.partner, req.body || {}, { raisedBy: 'Partner' });
+  const rows = await flashOffersOf(req.partner._id);
+  res.status(201).json({ success: true, message: 'Your flash offer is live', data: rows });
+});
+
+exports.stopFlashOffer = catchAsync(async (req, res) => {
+  const offer = await Offer.findOne({ _id: req.params.id, partner: req.partner._id, flash: true });
+  if (!offer) throw ApiError.notFound('We could not find that offer of yours');
+  await stopFlash(offer);
+  const rows = await flashOffersOf(req.partner._id);
+  res.json({ success: true, message: 'That offer has stopped', data: rows });
 });

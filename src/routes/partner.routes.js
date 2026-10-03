@@ -39,6 +39,12 @@ router.patch('/:id/reject', can('Vendors', 'approve'), validate({ reason: 'requi
 router.patch('/:id/request-changes', can('Vendors', 'approve'), validate({ note: 'required' }), c.requestChanges);
 router.patch('/:id/go-live', can('Vendors', 'approve'), c.goLive);
 
+// Short discounts on a partner's own listings. Raising one only ever cuts
+// the partner's own rate, so it needs no approval — editing is enough.
+router.get('/:id/flash-offers', can('Vendors', 'view'), c.flashOffers);
+router.post('/:id/flash-offers', can('Vendors', 'edit'), c.createFlashOffer);
+router.post('/:id/flash-offers/:offerId/stop', can('Vendors', 'edit'), c.stopFlashOffer);
+
 router
   .route('/:id')
   .get(can('Vendors', 'view'), c.getOne)

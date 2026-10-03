@@ -347,7 +347,22 @@ exports.packageBooking = catchAsync(async (req, res) => {
     b.coupon ? `Coupon typed: ${text(b.coupon, 30)}` : '',
   ].filter(Boolean);
 
-  const booking = await Booking.create({
+  /**
+   * Whether this is a booking at all.
+   *
+   * Somebody who has neither signed in nor joined has not booked anything
+   * — they have asked us to. Writing that straight onto the Booking page
+   * put an enquiry beside real business, and because it raised a lead as
+   * well the same person was listed twice for two different people to
+   * chase. A guest now leaves a lead and nothing else, and the desk turns
+   * it into a booking once they have spoken to them.
+   *
+   * The browser says whether it belongs to somebody. Holding a membership
+   * settles it either way, and that is read from our own records.
+   */
+  const signedIn = b.account === true || Boolean(plan);
+
+  const booking = !signedIn ? null : await Booking.create({
     upiId: upiId || undefined,
     customer: customer._id,
     customerName: customer.name,
@@ -381,10 +396,35 @@ exports.packageBooking = catchAsync(async (req, res) => {
     ],
   });
 
+  // No booking means a guest asked, so the desk gets the ask itself.
+  const lead = booking
+    ? null
+    : await leadAlongside({
+      customer,
+      label: 'Website package request',
+      tags: ['Website booking', 'Guest — no account'],
+      destination,
+      pax: adults + children,
+      travelDate: departure,
+      source: from.source,
+      campaign: from.campaign,
+      owner,
+      lines: [
+        `Asked for "${packageName}" on the website without signing in`,
+        'Nothing is held — call them, then raise the booking',
+        ...note,
+      ],
+    });
+
   res.status(201).json({
     success: true,
     message: plan ? 'Booking confirmed' : 'Request received',
-    data: { reference: booking.code, status: plan ? 'confirmed' : 'requested', plan: plan || null },
+    data: {
+      reference: booking ? booking.code : lead.code,
+      status: plan ? 'confirmed' : 'requested',
+      plan: plan || null,
+      booked: Boolean(booking),
+    },
   });
 });
 
@@ -469,8 +509,23 @@ exports.booking = catchAsync(async (req, res) => {
   const customer = await customerFor({ name, phone, email, profile: b.profile }, owner);
   const plan = await memberPlanOf(customer);
 
+  /**
+   * Whether this is a booking at all.
+   *
+   * Somebody who has neither signed in nor joined has not booked anything
+   * — they have asked us to. Writing that straight onto the Booking page
+   * put an enquiry beside real business, and because it raised a lead as
+   * well the same person was listed twice for two different people to
+   * chase. A guest now leaves a lead and nothing else, and the desk turns
+   * it into a booking once they have spoken to them.
+   *
+   * The browser says whether it belongs to somebody. Holding a membership
+   * settles it either way, and that is read from our own records.
+   */
+  const signedIn = b.account === true || Boolean(plan);
+
   const type = KIND_TYPE[kind];
-  const booking = await Booking.create({
+  const booking = !signedIn ? null : await Booking.create({
     customer: customer._id,
     customerName: customer.name,
     bookingType: type,
@@ -506,16 +561,13 @@ exports.booking = catchAsync(async (req, res) => {
   });
 
 
-  /**
-   * A request from somebody who is not a member is a sales call waiting to
-   * happen, so it goes to Sales & Leads too. A member's booking does not —
-   * that is already business, and the Booking page is where it belongs.
-   */
-  if (!plan) {
-    await leadAlongside({
+  // No booking means a guest asked, so the desk gets the ask itself.
+  const lead = booking
+    ? null
+    : await leadAlongside({
       customer,
-      label: 'Website booking',
-      tags: ['Website booking', 'Not a member'],
+      label: 'Website booking request',
+      tags: ['Website booking', 'Guest — no account'],
       destination: location || what,
       pax: guestCount,
       travelDate: checkIn,
@@ -523,18 +575,22 @@ exports.booking = catchAsync(async (req, res) => {
       campaign: from.campaign,
       owner,
       lines: [
-        `Booked "${what}" on the website without a membership`,
-        `Booking ${booking.code} is waiting on the desk to confirm`,
-        upiId ? `Collect from UPI ${upiId}` : 'No UPI given — ask how they want to pay',
+        `Asked for "${what}" on the website without signing in`,
+        'Nothing is held — call them, then raise the booking',
         upiId ? `Collect from UPI ${upiId}` : 'No UPI given — ask how they want to pay',
         ...note,
       ],
     });
-  }
+
   res.status(201).json({
     success: true,
     message: plan ? 'Booking confirmed' : 'Request received',
-    data: { reference: booking.code, status: plan ? 'confirmed' : 'requested', plan: plan || null },
+    data: {
+      reference: booking ? booking.code : lead.code,
+      status: plan ? 'confirmed' : 'requested',
+      plan: plan || null,
+      booked: Boolean(booking),
+    },
   });
 });
 
@@ -1031,6 +1087,67 @@ exports.liveOffers = catchAsync(async (req, res) => {
       appliesTo: o.appliesTo || [],
       endsOn: o.endsOn || null,
     })),
+  });
+});
+
+/**
+ * Flash offers: the short ones a partner has put on their own listing.
+ *
+ * Its own screen rather than a filter on the offers above, because these
+ * answer a different question. An offer is something to remember when you
+ * come to book; a flash offer is a reason to book now, and the thing that
+ * makes it worth showing is the clock on it. So each one comes back with
+ * the listing attached — its name, where it is, a photograph and what it
+ * costs before and after — and the moment it stops.
+ *
+ * One that has run out is left out here rather than shown greyed: an offer
+ * the member cannot have is not an offer.
+ */
+exports.flashOffers = catchAsync(async (req, res) => {
+  const now = new Date();
+  const rows = await Offer.find({
+    flash: true,
+    status: 'Live',
+    startsOn: { $lte: now },
+    endsOn: { $gte: now },
+  })
+    .sort({ endsOn: 1 })
+    .limit(12)
+    .populate('listing')
+    .lean();
+
+  const live = rows.filter((o) => o.listing && ON_OFFER.includes(o.listing.status));
+
+  res.json({
+    success: true,
+    count: live.length,
+    data: live.map((o) => {
+      const item = forWebsite(o.listing);
+      const percent = Number(o.value) || 0;
+      // Struck from what a member would otherwise pay, so the saving shown
+      // is the saving they actually make.
+      const now_ = Math.round(item.price * (1 - percent / 100));
+      return {
+        id: o.code || String(o._id),
+        name: o.name,
+        description: o.description || '',
+        percent,
+        minSpend: o.minSpend || 0,
+        endsOn: o.endsOn,
+        listing: {
+          id: item.id,
+          category: item.category,
+          name: item.name,
+          place: item.place,
+          image: (item.images || [])[0] || '',
+          rating: item.details?.rating || null,
+          reviews: item.details?.reviews || 0,
+          price: now_,
+          was: item.price,
+          left: item.left,
+        },
+      };
+    }),
   });
 });
 
