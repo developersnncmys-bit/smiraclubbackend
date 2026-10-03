@@ -15,24 +15,42 @@ const InventoryItem = require('../models/InventoryItem');
  */
 
 /** What a partner calls their place, and what the website files it under. */
+/**
+ * Which screen a partner's listing belongs on.
+ *
+ * It follows the website's own menu rather than the obvious reading of the
+ * word: a homestay is listed with the villas there, not the hotels, and a
+ * campsite sits under Camping & Adventure with the activities. Getting
+ * this wrong puts a real partner on a page nobody looking for them opens.
+ */
 const CATEGORY_OF = {
   Hotel: 'Hotels',
   Resort: 'Hotels',
-  Homestay: 'Hotels',
-  Camp: 'Hotels',
+  // A free stay is the same hotel with the price moved onto the food, so it
+  // is filed with the hotels and marked — see freeStay below.
+  'Free Stay': 'Hotels',
   Villa: 'Villas',
+  // The website's Home Stay goes to /villas?collection=homestay.
+  Homestay: 'Villas',
+
+  Package: 'Packages',
+  'International Trip': 'Packages',
+  'Group Departure': 'Packages',
+
   Restaurant: 'Restaurants',
   'Spa & Salon': 'Spa and salon',
   'Games Zone': 'Games',
   'Theme Park': 'Attractions',
   'Water Park': 'Attractions',
+  // The website's Camping & Adventure is one screen, /activities.
   Activity: 'Activities',
-  Package: 'Packages',
-  'Group Departure': 'Packages',
+  Camp: 'Activities',
+  'Luxury Experience': 'Experiences',
+  Lifestyle: 'Experiences',
+
   Flight: 'Flights',
   'Train & Bus': 'Transport',
   Transport: 'Transport',
-  Lifestyle: 'Experiences',
 };
 
 /** The partner's own category, when they never chose a property type. */
@@ -87,6 +105,24 @@ const photosFrom = (listing) =>
  * the amenities they chose, plus the facilities, which the website shows
  * in the same grid.
  */
+/**
+ * The partner's own details, as a plain object the item can hold.
+ *
+ * A listing's details is a subdocument. Spreading one hands back every
+ * path the schema declares — including the ones the partner never filled
+ * in, as undefined — and an undefined cast onto details.host throws. So it
+ * is converted first and the empty paths dropped.
+ */
+const detailsFrom = (listing, extra = {}) => {
+  const d = listing.details;
+  const plain = d && typeof d.toObject === 'function' ? d.toObject() : { ...(d || {}) };
+  delete plain._id;
+  for (const key of Object.keys(plain)) {
+    if (plain[key] === undefined) delete plain[key];
+  }
+  return { ...plain, ...extra };
+};
+
 const amenitiesFrom = (listing) =>
   [...new Set([...(listing.amenities || []), ...(listing.facilities || [])].map(text).filter(Boolean))].slice(0, 40);
 
@@ -132,8 +168,14 @@ async function publishListing(partner, { by } = {}) {
     rooms,
     units,
     baseRate: num(listing.pricing?.partnerRate),
-    // Everything the detail pages print, exactly as the partner gave it.
-    details: listing.details || {},
+    /**
+     * Everything the detail pages print, exactly as the partner gave it —
+     * plus whether this is a free stay, which is not something the partner
+     * types but something their property type says. The free-stay screen
+     * shows the same hotels as the nightly one, so the two can only be
+     * told apart by a mark like this.
+     */
+    details: detailsFrom(listing, { freeStay: prop.type === 'Free Stay' }),
   };
 
   const already = await InventoryItem.findOne({ partner: partner._id });

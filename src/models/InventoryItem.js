@@ -84,6 +84,8 @@ const inventorySchema = new mongoose.Schema(
       highlight: String,
       notes: [String],
       freeCancellation: { type: Boolean, default: false },
+      /** A room the member stays in free, paying only for food. */
+      freeStay: { type: Boolean, default: false },
       taxes: Number,
       host: { title: String, speaks: String, blurb: String },
       nearby: [{ _id: false, place: String, km: String }],

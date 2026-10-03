@@ -30,10 +30,16 @@ const listingSchema = new mongoose.Schema(
       type: {
         type: String,
         enum: [
-          'Hotel', 'Resort', 'Homestay', 'Villa', 'Camp',
-          'Restaurant', 'Spa & Salon', 'Games Zone', 'Theme Park', 'Water Park',
-          'Activity', 'Package', 'Group Departure',
-          'Flight', 'Train & Bus', 'Transport', 'Lifestyle', '',
+          // The services the website sells, in the order it lists them.
+          'Hotel', 'Resort', 'Villa', 'Homestay', 'Free Stay',
+          'International Trip', 'Group Departure', 'Package',
+          'Restaurant', 'Water Park', 'Theme Park', 'Games Zone', 'Spa & Salon',
+          'Luxury Experience', 'Camp', 'Activity',
+          'Flight', 'Train & Bus', 'Transport',
+          // What Luxury Experience was called before. Kept so partners
+          // saved under it stay valid; the forms no longer offer it.
+          'Lifestyle',
+          '',
         ],
       },
       name: str,
