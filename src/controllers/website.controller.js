@@ -631,6 +631,18 @@ exports.membership = catchAsync(async (req, res) => {
 
   const memberUpi = text(b.upiId, 80);
 
+  /**
+   * What the member says they have paid, and where to.
+   *
+   * The website shows Smira's own QR and UPI id, takes the money into the
+   * merchant account and asks for the reference the member's app gave
+   * them. None of that is proof — a page cannot ask a bank whether money
+   * arrived — so the membership still opens on Payment pending and the
+   * desk matches the reference against the account before activating it.
+   */
+  const paymentRef = text(b.paymentRef, 40).replace(/[^A-Za-z0-9]/g, '');
+  const paidTo = text(b.paidTo, 80);
+
   const lines = [
     `Bought on the website — ${wanted} membership`,
     plan.name.toLowerCase().startsWith(first) ? '' : `The desk has no ${wanted} plan yet — put on ${plan.name}, check with the member`,
@@ -639,14 +651,19 @@ exports.membership = catchAsync(async (req, res) => {
     list(b.privileges).length ? `Privileges: ${list(b.privileges).join(', ')}` : '',
     b.sharing ? 'Wants membership sharing' : '',
     b.coupon ? `Coupon: ${text(b.coupon, 30)}` : '',
-    memberUpi
-      ? `Will pay from UPI ${memberUpi} — raise the request, nothing was charged here`
-      : 'No UPI given — ask how they want to pay',
+    paymentRef
+      ? `Says they have paid ₹${amount.toLocaleString('en-IN')}${paidTo ? ` to ${paidTo}` : ''} — UPI reference ${paymentRef}. Check the account before activating.`
+      : paidTo
+        ? `Was shown the QR for ${paidTo} but gave no reference — check the account, then call them`
+        : '',
+    memberUpi ? `Will pay from UPI ${memberUpi} — raise the request, nothing was charged here` : '',
     from.source !== 'Website' ? `Came from ${from.source}${from.campaign ? ` — campaign "${from.campaign}"` : ''}` : '',
   ].filter(Boolean);
 
   const membership = await Membership.create({
     upiId: memberUpi || undefined,
+    paymentRef: paymentRef || undefined,
+    paidTo: paidTo || undefined,
     customer: customer._id,
     name: customer.name,
     phone: customer.phone,

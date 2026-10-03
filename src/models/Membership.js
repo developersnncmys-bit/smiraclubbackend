@@ -44,6 +44,17 @@ const membershipSchema = new mongoose.Schema(
      */
     upiId: { type: String, trim: true, maxlength: 80 },
 
+    /**
+     * What the member says they paid, and where to.
+     *
+     * There is no gateway, so nothing here is proof of anything — it is
+     * the reference their UPI app showed them, kept so the desk can find
+     * the payment in the account rather than ringing to ask. The
+     * membership stays pending until somebody has actually seen it land.
+     */
+    paymentRef: { type: String, trim: true, maxlength: 40 },
+    paidTo: { type: String, trim: true, maxlength: 80 },
+
     status: { type: String, enum: MEMBERSHIP_STATUSES, default: 'New', index: true },
 
     expert: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
