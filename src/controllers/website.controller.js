@@ -260,6 +260,19 @@ async function memberPlanOf(customer) {
   }).sort({ receivedOn: -1 }).lean();
   if (!held) return null;
   if (held.expiresOn && new Date(held.expiresOn) < new Date()) return null;
+
+  /**
+   * And it has to have been paid for.
+   *
+   * Every website signup opens on Payment pending, so counting one as a
+   * membership meant anybody who pressed Pay now and then closed the tab
+   * was a member from that moment: confirmed bookings, member prices, the
+   * lot. A membership the desk has marked Active counts, and so does one
+   * with nothing left owing — which covers a plan the desk comped.
+   */
+  const owed = Number(held.amount || 0) - Number(held.paid || 0);
+  if (held.status !== 'Active' && owed > 0) return null;
+
   return String(held.planName || 'Smira Club').split(' ')[0];
 }
 
@@ -352,17 +365,18 @@ exports.packageBooking = catchAsync(async (req, res) => {
   /**
    * Whether this is a booking at all.
    *
-   * Somebody who has neither signed in nor joined has not booked anything
-   * — they have asked us to. Writing that straight onto the Booking page
-   * put an enquiry beside real business, and because it raised a lead as
-   * well the same person was listed twice for two different people to
-   * chase. A guest now leaves a lead and nothing else, and the desk turns
-   * it into a booking once they have spoken to them.
+   * A booking on the Booking page is business the desk has. Anything else
+   * is somebody asking, and that belongs in Sales & Leads where there is
+   * somebody to chase it.
    *
-   * The browser says whether it belongs to somebody. Holding a membership
-   * settles it either way, and that is read from our own records.
+   * The line between them is a paid membership, not a signed-in browser.
+   * Signing in used to be enough, which put every half-finished signup on
+   * the Booking page: a visitor pressed Pay now, never paid, and their
+   * booking was sitting there marked Confirmed. A member who has paid
+   * books; everybody else asks, and the desk raises the booking when the
+   * money is in.
    */
-  const signedIn = b.account === true || Boolean(plan);
+  const signedIn = Boolean(plan);
 
   const booking = !signedIn ? null : await Booking.create({
     upiId: upiId || undefined,
@@ -514,17 +528,18 @@ exports.booking = catchAsync(async (req, res) => {
   /**
    * Whether this is a booking at all.
    *
-   * Somebody who has neither signed in nor joined has not booked anything
-   * — they have asked us to. Writing that straight onto the Booking page
-   * put an enquiry beside real business, and because it raised a lead as
-   * well the same person was listed twice for two different people to
-   * chase. A guest now leaves a lead and nothing else, and the desk turns
-   * it into a booking once they have spoken to them.
+   * A booking on the Booking page is business the desk has. Anything else
+   * is somebody asking, and that belongs in Sales & Leads where there is
+   * somebody to chase it.
    *
-   * The browser says whether it belongs to somebody. Holding a membership
-   * settles it either way, and that is read from our own records.
+   * The line between them is a paid membership, not a signed-in browser.
+   * Signing in used to be enough, which put every half-finished signup on
+   * the Booking page: a visitor pressed Pay now, never paid, and their
+   * booking was sitting there marked Confirmed. A member who has paid
+   * books; everybody else asks, and the desk raises the booking when the
+   * money is in.
    */
-  const signedIn = b.account === true || Boolean(plan);
+  const signedIn = Boolean(plan);
 
   const type = KIND_TYPE[kind];
   const booking = !signedIn ? null : await Booking.create({
