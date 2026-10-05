@@ -32,6 +32,20 @@ const planSchema = new mongoose.Schema(
     },
 
     discount: { type: Number, default: 0 },
+
+    /**
+ * Sharing the plan with family, and what that costs.
+ *
+ * It was one price written into the website and charged on every tier,
+ * so a Silver member and a Crown member paid the same to share quite
+ * different benefits, and the desk could not change either. A price of
+ * nought means this plan is not shared at all and the website leaves the
+ * whole question off.
+ */
+    sharing: {
+      price: { type: Number, default: 0 },
+      label: { type: String, trim: true, maxlength: 90 },
+    },
     /** How many preferred services a member on this plan may choose. */
     privileges: { type: Number, default: 1 },
     services: [String],
