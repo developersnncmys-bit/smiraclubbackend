@@ -728,7 +728,28 @@ exports.setAvailability = catchAsync(async (req, res) => {
  */
 exports.flashOffers = catchAsync(async (req, res) => {
   const rows = await flashOffersOf(req.partner._id);
-  res.json({ success: true, count: rows.length, data: rows });
+
+  // What there is to discount, so the form can offer it. The desk's own
+  // door sends this too; this one did not, which left the partner with
+  // an empty Listing box and no way past it.
+  const listings = await InventoryItem.find({
+    partner: req.partner._id,
+    status: { $in: ['Active', 'Limited', 'Low'] },
+  })
+    .select('code name category')
+    .lean();
+
+  res.json({
+    success: true,
+    count: rows.length,
+    data: rows,
+    listings: listings.map((l) => ({
+      ref: String(l._id),
+      id: l.code,
+      name: l.name,
+      category: l.category,
+    })),
+  });
 });
 
 exports.createFlashOffer = catchAsync(async (req, res) => {
