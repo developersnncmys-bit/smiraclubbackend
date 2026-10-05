@@ -636,13 +636,22 @@ exports.membership = catchAsync(async (req, res) => {
   /**
    * What the member says they have paid, and where to.
    *
-   * The website shows Smira's own QR and UPI id, takes the money into the
-   * merchant account and asks for the reference the member's app gave
-   * them. None of that is proof — a page cannot ask a bank whether money
-   * arrived — so the membership still opens on Payment pending and the
-   * desk matches the reference against the account before activating it.
+   * The website offers three ways to pay. UPI finishes on the phone,
+   * into Smira's own merchant account; a card or net banking is a
+   * link the desk raises, because neither can be taken safely on a page
+   * that is not a certified payment page.
+   *
+   * None of it is proof — a page cannot ask a bank whether money
+   * arrived — so the membership opens on Payment pending either way and
+   * the desk checks the account before activating it.
    */
   const paymentRef = text(b.paymentRef, 40).replace(/[^A-Za-z0-9]/g, '');
+  // How they chose to pay. UPI is the only one that finishes on the
+  // website; a card or net banking is a link the desk raises, and the
+  // desk needs to know which to send.
+  const WAYS = ['UPI', 'Card', 'Netbanking'];
+  const wantedWay = text(b.paidVia, 20);
+  const paidVia = WAYS.includes(wantedWay) ? wantedWay : '';
   const paidTo = text(b.paidTo, 80);
 
   const lines = [
@@ -653,10 +662,15 @@ exports.membership = catchAsync(async (req, res) => {
     list(b.privileges).length ? `Privileges: ${list(b.privileges).join(', ')}` : '',
     b.sharing ? 'Wants membership sharing' : '',
     b.coupon ? `Coupon: ${text(b.coupon, 30)}` : '',
+    paidVia === 'UPI'
+      ? ''
+      : paidVia
+        ? `Wants to pay by ${paidVia === 'Card' ? 'card' : 'net banking'} — send them a payment link`
+        : '',
     paymentRef
       ? `Says they have paid ₹${amount.toLocaleString('en-IN')}${paidTo ? ` to ${paidTo}` : ''} — UPI reference ${paymentRef}. Check the account before activating.`
       : paidTo
-        ? `Was shown the QR for ${paidTo} but gave no reference — check the account, then call them`
+        ? `Says they have paid ${paidTo} — check the account before activating`
         : '',
     memberUpi ? `Will pay from UPI ${memberUpi} — raise the request, nothing was charged here` : '',
     from.source !== 'Website' ? `Came from ${from.source}${from.campaign ? ` — campaign "${from.campaign}"` : ''}` : '',
@@ -665,6 +679,7 @@ exports.membership = catchAsync(async (req, res) => {
   const membership = await Membership.create({
     upiId: memberUpi || undefined,
     paymentRef: paymentRef || undefined,
+    paidVia: paidVia || undefined,
     paidTo: paidTo || undefined,
     customer: customer._id,
     name: customer.name,
