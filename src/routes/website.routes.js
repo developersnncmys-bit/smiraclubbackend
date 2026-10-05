@@ -49,6 +49,21 @@ router.post('/enquiry', perAddress, perPhone, c.enquiry);
 router.get('/plans', c.plans);
 
 /**
+ * Checking a coupon is one lookup for us and a guessing game for anybody
+ * trying codes at random, so it is capped tighter than the forms are. It
+ * takes nothing and writes nothing, which is why it is a GET.
+ */
+const perCoupon = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 60,
+  message: { success: false, message: 'Too many codes tried — give it a few minutes' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+router.get('/coupon/:code', perCoupon, c.checkCoupon);
+
+/**
  * What the desk is selling, read-only and open, so the site can show the
  * stock and the offers the panel holds rather than the copy in its build.
  */

@@ -12,6 +12,7 @@ const Offer = require('../models/Offer');
 const ApiError = require('../helpers/ApiError');
 const catchAsync = require('../helpers/catchAsync');
 const { sellingRate, memberRate } = require('../helpers/money');
+const { couponFor, redeemCoupon } = require('../helpers/coupons');
 
 /**
  * Who picks up what the website sends.
@@ -669,6 +670,19 @@ exports.membership = catchAsync(async (req, res) => {
   const paidVia = WAYS.includes(wantedWay) ? wantedWay : '';
   const paidTo = text(b.paidTo, 80);
 
+  /**
+   * The coupon, checked here rather than taken on trust.
+   *
+   * The page works the discount out to show someone what they will pay,
+   * and the page is not evidence. The desk needs to know whether the code
+   * on the membership was a real one, so it is looked up again against the
+   * Offers page and the answer goes in the timeline either way.
+   */
+  const couponCode = text(b.coupon, 30).toUpperCase();
+  const couponCheck = couponCode
+    ? await couponFor(couponCode, { spend: amount, use: 'Membership' })
+    : null;
+
   const lines = [
     `Bought on the website — ${wanted} membership`,
     plan.name.toLowerCase().startsWith(first) ? '' : `The desk has no ${wanted} plan yet — put on ${plan.name}, check with the member`,
@@ -676,7 +690,11 @@ exports.membership = catchAsync(async (req, res) => {
     list(b.gifts).length ? `Welcome gift: ${list(b.gifts).join(', ')}` : '',
     list(b.privileges).length ? `Privileges: ${list(b.privileges).join(', ')}` : '',
     b.sharing ? 'Wants membership sharing' : '',
-    b.coupon ? `Coupon: ${text(b.coupon, 30)}` : '',
+    couponCheck
+      ? couponCheck.valid
+        ? `Coupon ${couponCode} applied — ${couponCheck.off ? `₹${couponCheck.off.toLocaleString('en-IN')} off` : couponCheck.gives || couponCheck.name}`
+        : `Coupon ${couponCode} typed but it does not hold — ${couponCheck.reason} Quoted price may be short.`
+      : '',
     paidVia === 'UPI'
       ? ''
       : paidVia
@@ -715,6 +733,10 @@ exports.membership = catchAsync(async (req, res) => {
     timeline: lines.map((note) => ({ step: 'Website', at: new Date(), note })),
   });
 
+  // Counted only now, so a code is not spent by a membership that failed
+  // to save, and only when it actually held up.
+  if (couponCheck?.valid) await redeemCoupon(couponCode);
+
   /**
    * A membership nobody has paid for is not a member yet — it is somebody
    * who said yes and needs collecting from. It goes to Sales & Leads until
@@ -739,6 +761,33 @@ exports.membership = catchAsync(async (req, res) => {
     success: true,
     message: 'Membership requested',
     data: { reference: membership.code, plan: wanted, expiresOn: expires },
+  });
+});
+
+/**
+ * Is this coupon any good, and what is it worth?
+ *
+ * Open, because somebody typing a code into the membership page has not
+ * signed in yet. It says what the code is worth and why it will not go on,
+ * and nothing else about the offer behind it — how many times a code has
+ * been used is the desk's business.
+ */
+exports.checkCoupon = catchAsync(async (req, res) => {
+  const spend = Math.min(Math.max(Number(req.query.spend) || 0, 0), 5000000);
+  const use = ['Membership', 'Booking'].includes(req.query.for) ? req.query.for : '';
+  const c = await couponFor(req.params.code, { spend, use });
+
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    success: true,
+    data: {
+      code: c.code,
+      valid: c.valid,
+      off: c.off,
+      name: c.valid ? c.name : '',
+      gives: c.valid ? c.gives : '',
+      reason: c.reason,
+    },
   });
 });
 
