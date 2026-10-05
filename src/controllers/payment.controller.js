@@ -9,7 +9,17 @@ const { GATEWAYS } = require('../config/constants');
 const base = crud(Payment, {
   name: 'Payment',
   searchable: ['customerName', 'reference', 'gatewayTxnId', 'code'],
-  populate: { path: 'collectedBy', select: 'name code' },
+  /**
+   * The records a payment points at, so the desk's Payment page can show
+   * which booking and which customer it settled rather than guessing from
+   * the invoice. All of this was already stored and none of it was read.
+   */
+  populate: [
+    { path: 'collectedBy', select: 'name code' },
+    { path: 'customer', select: 'name code phone' },
+    { path: 'booking', select: 'code bookingType hotel packageName payRef' },
+    { path: 'membership', select: 'code planName payRef' },
+  ],
   defaultSort: '-paidOn',
 });
 

@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const { BOOKING_STATUSES, BOOKING_TYPES } = require('../config/constants');
-const { withCode } = require('../helpers/ids');
+const { withCode, withPayRef } = require('../helpers/ids');
 const { bookingMarkup, balanceOf } = require('../helpers/money');
 
 /** Who touched a booking, which the Booking sheet asks to be kept. */
@@ -18,6 +18,12 @@ const handledSchema = new mongoose.Schema(
 const bookingSchema = new mongoose.Schema(
   {
     code: { type: String, unique: true, index: true },
+    /**
+     * What a payment gateway is told this is for. Unique and not
+     * guessable, unlike the code above — see withPayRef.
+     */
+    payRef: { type: String, unique: true, sparse: true, index: true },
+
 
     customer: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true },
     customerName: String,
@@ -111,6 +117,7 @@ const bookingSchema = new mongoose.Schema(
 );
 
 withCode(bookingSchema, 'BKG', { pad: 4, start: 8800 });
+withPayRef(bookingSchema);
 
 bookingSchema.index({ customerName: 'text', hotel: 'text', destination: 'text' });
 bookingSchema.index({ status: 1, checkIn: 1, owner: 1 });

@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const { MEMBERSHIP_STATUSES, ACTIVATION_STAGES, MOVEMENTS } = require('../config/constants');
-const { withCode } = require('../helpers/ids');
+const { withCode, withPayRef } = require('../helpers/ids');
 const { balanceOf, paymentStatus } = require('../helpers/money');
 
 /**
@@ -10,6 +10,12 @@ const { balanceOf, paymentStatus } = require('../helpers/money');
 const membershipSchema = new mongoose.Schema(
   {
     code: { type: String, unique: true, index: true },
+    /**
+     * What a payment gateway is told this is for. Unique and not
+     * guessable, unlike the code above — see withPayRef.
+     */
+    payRef: { type: String, unique: true, sparse: true, index: true },
+
 
     customer: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true },
     name: { type: String, required: true },
@@ -108,6 +114,7 @@ const membershipSchema = new mongoose.Schema(
 );
 
 withCode(membershipSchema, 'MSU', { pad: 3, start: 0 });
+withPayRef(membershipSchema);
 
 membershipSchema.index({ name: 'text', phone: 'text', planName: 'text' });
 membershipSchema.index({ status: 1, expiresOn: 1, expert: 1 });
