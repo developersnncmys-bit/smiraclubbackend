@@ -206,6 +206,28 @@ exports.tripEnquiry = catchAsync(async (req, res) => {
  *
  * It is never created for a paid-up member: their booking is a booking.
  */
+/**
+ * The membership quiz, as lines a person can read.
+ *
+ * The website sends the questions already worded — "How often do you
+ * travel?" and what they picked — rather than keys this file would have
+ * to keep a second copy of the wording for. Everything is trimmed and
+ * capped, because it arrives from an open form.
+ */
+function quizLines(quiz) {
+  if (!Array.isArray(quiz)) return [];
+  return quiz
+    .slice(0, 20)
+    .map((row) => {
+      const q = text(row?.q, 80);
+      const a = Array.isArray(row?.a)
+        ? row.a.slice(0, 8).map((x) => text(x, 40)).filter(Boolean).join(', ')
+        : text(row?.a, 120);
+      return q && a ? `${q} ${a}` : '';
+    })
+    .filter(Boolean);
+}
+
 async function leadAlongside({ customer, label, tags, destination, pax, travelDate, lines, source, campaign, owner }) {
   return Lead.create({
     name: customer.name,
@@ -690,6 +712,9 @@ exports.membership = catchAsync(async (req, res) => {
     list(b.gifts).length ? `Welcome gift: ${list(b.gifts).join(', ')}` : '',
     list(b.privileges).length ? `Privileges: ${list(b.privileges).join(', ')}` : '',
     b.sharing ? 'Wants membership sharing' : '',
+    ...(quizLines(b.quiz).length
+      ? ['Told the membership quiz:', ...quizLines(b.quiz).map((l) => `  · ${l}`)]
+      : []),
     couponCheck
       ? couponCheck.valid
         ? `Coupon ${couponCode} applied — ${couponCheck.off ? `₹${couponCheck.off.toLocaleString('en-IN')} off` : couponCheck.gives || couponCheck.name}`
@@ -762,6 +787,76 @@ exports.membership = catchAsync(async (req, res) => {
     message: 'Membership requested',
     data: { reference: membership.code, plan: wanted, expiresOn: expires },
   });
+});
+
+/**
+ * Somebody finished the membership quiz.
+ *
+ * The quiz asks how often they travel, who with, and what they spend —
+ * which is most of a sales call — and until now it threw all of it away
+ * when the page closed. Someone who takes it and does not buy is the
+ * warmest lead the site produces, so it is raised as one.
+ *
+ * Only when a name and number are given. A visitor who has not told us
+ * who they are leaves nothing behind, because a lead with nobody to ring
+ * is noise on somebody's queue.
+ */
+exports.membershipQuiz = catchAsync(async (req, res) => {
+  const b = req.body || {};
+  const name = text(b.name, 80);
+  const phone = tenDigits(b.phone);
+  const lines = quizLines(b.quiz);
+
+  if (!name || phone.length < 10 || !lines.length) {
+    // Nothing to act on, and nothing worth an error either.
+    return res.status(202).json({ success: true, message: 'Noted' });
+  }
+
+  const owner = await pickDeskOwner();
+  const customer = await customerFor({ name, phone, email: text(b.email, 120), profile: b.profile }, owner);
+  const from = attribution(b.attribution);
+  const suggested = text(b.recommended, 40);
+
+  /**
+   * One lead per person, not one per time they press the button.
+   *
+   * Somebody comparing plans may run the quiz three times; the desk
+   * wants the latest answers on the enquiry it already has, not three
+   * identical cards to work through.
+   */
+  const already = await Lead.findOne({
+    customer: customer._id,
+    label: 'Membership quiz',
+    status: { $nin: ['Won', 'Lost'] },
+  });
+
+  const notes = [
+    suggested ? `The quiz suggested ${suggested}` : 'Finished the membership quiz',
+    ...lines,
+    from.source !== 'Website' ? `Came from ${from.source}` : '',
+  ].filter(Boolean);
+
+  if (already) {
+    already.notes = notes.join('\n');
+    already.timeline = [
+      ...(already.timeline || []),
+      { step: 'Website', at: new Date(), note: 'Took the membership quiz again — answers updated' },
+    ];
+    await already.save();
+    return res.status(200).json({ success: true, message: 'Noted', data: { reference: already.code } });
+  }
+
+  const lead = await leadAlongside({
+    customer,
+    label: 'Membership quiz',
+    tags: ['Membership', 'Quiz', suggested].filter(Boolean),
+    source: from.source,
+    campaign: from.campaign,
+    owner,
+    lines: notes,
+  });
+
+  res.status(201).json({ success: true, message: 'Noted', data: { reference: lead?.code } });
 });
 
 /**
