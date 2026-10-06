@@ -9,6 +9,8 @@ const Membership = require('../models/Membership');
 const MembershipPlan = require('../models/MembershipPlan');
 const InventoryItem = require('../models/InventoryItem');
 const Offer = require('../models/Offer');
+const Reward = require('../models/Reward');
+const Referral = require('../models/Referral');
 const ApiError = require('../helpers/ApiError');
 const catchAsync = require('../helpers/catchAsync');
 const { sellingRate, memberRate } = require('../helpers/money');
@@ -1093,6 +1095,166 @@ exports.memberMe = catchAsync(async (req, res) => {
         : null,
       bookings: bookings.map(bookingForMember),
     },
+  });
+});
+
+/**
+ * The gifts a member has, and what has happened to each.
+ *
+ * Claim Your Gifts on the website had no API at all: the card marked
+ * itself claimed in the browser and told the member the desk would be in
+ * touch, which the desk had no way of knowing.
+ */
+exports.memberRewards = catchAsync(async (req, res) => {
+  const rows = await Reward.find({ customer: req.member._id })
+    .sort({ createdAt: -1 })
+    .limit(50)
+    .lean();
+
+  res.json({
+    success: true,
+    count: rows.length,
+    data: rows.map((r) => ({
+      id: String(r._id),
+      reference: r.code,
+      gift: r.gift,
+      kind: r.kind,
+      value: r.value || 0,
+      eligibility: r.eligibility || '',
+      stage: r.stage,
+      claimed: Boolean(r.claimedOn),
+      claimedOn: r.claimedOn || null,
+      deliveredOn: r.deliveredOn || null,
+    })),
+  });
+});
+
+/**
+ * "I would like this one."
+ *
+ * Recorded against the reward and left for the desk. The stage is the
+ * desk's to move — a gift somebody has to pack and post is not approved
+ * by the person receiving it — so this writes the claim and nothing else.
+ */
+exports.claimReward = catchAsync(async (req, res) => {
+  const reward = await Reward.findOne({ _id: req.params.id, customer: req.member._id });
+  if (!reward) throw ApiError.notFound('No such gift on your account');
+
+  if (['Delivered', 'Cancelled'].includes(reward.stage)) {
+    throw ApiError.badRequest(
+      reward.stage === 'Delivered' ? 'That gift has already been sent' : 'That gift is no longer available',
+    );
+  }
+
+  if (!reward.claimedOn) {
+    reward.claimedOn = new Date();
+    await reward.save();
+  }
+
+  res.json({
+    success: true,
+    message: 'Claimed — our desk will be in touch',
+    data: { id: String(reward._id), claimed: true, claimedOn: reward.claimedOn, stage: reward.stage },
+  });
+});
+
+/** The code a member shares, made once and kept. */
+async function referralCodeFor(customer) {
+  if (customer.referral?.code) return customer.referral.code;
+
+  const base = String(customer.name || 'SMIRA')
+    .toUpperCase()
+    .replace(/[^A-Z]/g, '')
+    .slice(0, 5) || 'SMIRA';
+  const tail = String(customer.phone || '').replace(/\D/g, '').slice(-4) || '0000';
+  const code = `${base}${tail}`;
+
+  await Customer.updateOne({ _id: customer._id }, { $set: { 'referral.code': code } });
+  return code;
+}
+
+/** What a member has referred, and what it has earned them. */
+exports.memberReferrals = catchAsync(async (req, res) => {
+  const me = req.member;
+  const [code, rows] = await Promise.all([
+    referralCodeFor(me),
+    Referral.find({ referrer: me._id }).sort({ createdAt: -1 }).limit(50).lean(),
+  ]);
+
+  const earned = rows.filter((r) => r.paid).reduce((s, r) => s + Number(r.reward || 0), 0);
+  const pending = rows.filter((r) => !r.paid).reduce((s, r) => s + Number(r.reward || 0), 0);
+
+  res.json({
+    success: true,
+    data: {
+      code,
+      earned,
+      pending,
+      referrals: rows.map((r) => ({
+        id: String(r._id),
+        reference: r.code,
+        name: r.referredName,
+        status: r.status,
+        reward: r.reward || 0,
+        rewardKind: r.rewardKind,
+        paid: Boolean(r.paid),
+        on: r.createdAt,
+      })),
+    },
+  });
+});
+
+/**
+ * Referring somebody.
+ *
+ * Raises the referral and a lead beside it, because a name and a number
+ * with nobody chasing them is not a referral, it is a note. The same
+ * person is not referred twice by the same member.
+ */
+exports.referSomeone = catchAsync(async (req, res) => {
+  const me = req.member;
+  const name = text(req.body?.name, 80);
+  const phone = tenDigits(req.body?.phone);
+
+  if (!name) throw ApiError.badRequest('Who are you referring?');
+  if (phone.length < 10) throw ApiError.badRequest('We need their ten-digit mobile number');
+  if (phone === tenDigits(me.phone)) throw ApiError.badRequest('That is your own number');
+
+  const already = await Referral.findOne({ referrer: me._id, referredPhone: phone });
+  if (already) throw ApiError.badRequest(`You have already referred ${already.referredName}`);
+
+  const code = await referralCodeFor(me);
+  const owner = await pickDeskOwner();
+  const lead = await Lead.create({
+    name,
+    phone,
+    source: 'Referral',
+    label: 'Referral',
+    tags: ['Referral', me.name].filter(Boolean),
+    notes: [
+      `Referred by ${me.name} (${me.phone}) — code ${code}`,
+      'Raised from Refer & Earn on the website',
+    ].join('\n'),
+    owner,
+    status: 'New',
+  });
+
+  const referral = await Referral.create({
+    referrer: me._id,
+    referrerName: me.name,
+    referralCode: code,
+    referredName: name,
+    referredPhone: phone,
+    lead: lead._id,
+    status: 'Enquiry',
+  });
+
+  await Customer.updateOne({ _id: me._id }, { $inc: { 'referral.total': 1 } });
+
+  res.status(201).json({
+    success: true,
+    message: `${name} has been referred — our desk will call them`,
+    data: { id: String(referral._id), reference: referral.code, name, status: referral.status },
   });
 });
 

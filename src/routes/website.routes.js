@@ -97,4 +97,15 @@ router.get('/member/me', protectMember, c.memberMe);
 router.get('/member/wishlist', protectMember, c.wishlistRead);
 router.post('/member/wishlist', protectMember, c.wishlistWrite);
 
+/**
+ * A member's own gifts and referrals.
+ *
+ * Everything here reads `req.member` from the token, so there is no id in
+ * an address anybody could change to somebody else's.
+ */
+router.get('/member/rewards', protectMember, c.memberRewards);
+router.post('/member/rewards/:id/claim', protectMember, c.claimReward);
+router.get('/member/referrals', protectMember, c.memberReferrals);
+router.post('/member/refer', protectMember, perPhone, c.referSomeone);
+
 module.exports = router;

@@ -39,6 +39,15 @@ const rewardSchema = new mongoose.Schema(
       default: 'Eligible',
       index: true,
     },
+    /**
+     * When the member asked for it.
+     *
+     * Claiming does not move the stage. A physical gift still needs the
+     * desk to approve and send it, and a member pressing a button on the
+     * website is not that approval — it is them saying they want it,
+     * which is what the desk was missing.
+     */
+    claimedOn: Date,
     deliveredOn: Date,
     note: String,
 
