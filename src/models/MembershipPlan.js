@@ -58,6 +58,14 @@ const planSchema = new mongoose.Schema(
      * invented expiry is a worse promise than none.
      */
     giftsEndOn: Date,
+    /**
+     * How many of the gifts a member may pick.
+     *
+     * Nought means they are not picking: every gift listed comes with
+     * the plan. One means "choose any one", which is how the desk sells
+     * the lower tiers.
+     */
+    giftChoices: { type: Number, default: 0 },
     features: [String],
 
     published: { type: Boolean, default: true },
