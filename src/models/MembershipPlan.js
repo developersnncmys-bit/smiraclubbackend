@@ -50,6 +50,14 @@ const planSchema = new mongoose.Schema(
     privileges: { type: Number, default: 1 },
     services: [String],
     gifts: [String],
+    /**
+     * When the gifts on this plan stop being offered.
+     *
+     * The website counts down to it. Empty means the gifts stand with no
+     * deadline, which is why nothing here defaults to a date — an
+     * invented expiry is a worse promise than none.
+     */
+    giftsEndOn: Date,
     features: [String],
 
     published: { type: Boolean, default: true },
