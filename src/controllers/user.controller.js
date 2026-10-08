@@ -14,7 +14,17 @@ const { LIVE_STATES } = require('../config/constants');
 const base = crud(User, {
   name: 'User',
   searchable: ['name', 'email', 'empId', 'code'],
-  populate: { path: 'role', select: 'name scope dashboard' },
+  /**
+   * The manager comes back as a name, not an id.
+   *
+   * Only the role was populated, so every list of people showed a
+   * twenty-four character ObjectId under "Reports to" — the database's
+   * name for somebody, not the desk's.
+   */
+  populate: [
+    { path: 'role', select: 'name scope dashboard' },
+    { path: 'manager', select: 'name code designation' },
+  ],
   defaultSort: 'name',
 });
 
