@@ -49,6 +49,15 @@ const customerSchema = new mongoose.Schema(
     },
     satisfaction: { type: Number, min: 0, max: 5 },
 
+    /**
+     * When they last opened their notifications.
+     *
+     * Notifications are not stored — they are worked out from the
+     * bookings, membership, gifts and offers on the account, so there
+     * is no row to mark read. Anything older than this has been seen.
+     */
+    notificationsReadAt: Date,
+
     referral: {
       code: String,
       total: { type: Number, default: 0 },

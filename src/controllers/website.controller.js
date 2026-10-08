@@ -1258,6 +1258,146 @@ exports.referSomeone = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * What a member would want telling.
+ *
+ * There is no notifications table and nothing writes to one. These are
+ * worked out each time from what is true on the account right now — a
+ * booking that is confirmed, a trip coming up, a membership waiting on
+ * payment, a gift nobody has claimed, an offer that is running. The
+ * website drew three of these from a file, so every member saw the same
+ * trip to Goa.
+ */
+exports.memberNotifications = catchAsync(async (req, res) => {
+  const me = req.member;
+  const now = Date.now();
+  const seenAt = me.notificationsReadAt ? new Date(me.notificationsReadAt).getTime() : 0;
+
+  const [bookings, membership, rewards, offers] = await Promise.all([
+    Booking.find({ customer: me._id }).sort({ updatedAt: -1 }).limit(20).lean(),
+    Membership.findOne({ customer: me._id, status: { $ne: 'Cancelled' } }).sort({ receivedOn: -1 }).lean(),
+    Reward.find({ customer: me._id, stage: { $nin: ['Delivered', 'Cancelled'] } }).limit(10).lean(),
+    Offer.find({
+      status: 'Live',
+      flash: { $ne: true },
+      $and: [
+        { $or: [{ startsOn: null }, { startsOn: { $lte: new Date() } }] },
+        { $or: [{ endsOn: null }, { endsOn: { $gte: new Date() } }] },
+      ],
+    }).sort({ endsOn: 1 }).limit(3).lean(),
+  ]);
+
+  const out = [];
+  const add = (n) => out.push({ ...n, unread: new Date(n.at).getTime() > seenAt });
+
+  for (const b of bookings) {
+    const at = b.updatedAt || b.createdAt;
+    const name = b.hotel || b.packageName || b.bookingType || 'Your booking';
+
+    if (b.status === 'Cancelled') {
+      add({
+        id: `booking-${b._id}-cancelled`,
+        kind: 'Booking update', tone: 'reminder', icon: 'CircleCheck',
+        title: name, body: `Booking ${b.code} has been cancelled.`,
+        at, href: '/profile/bookings',
+      });
+    } else if (/Confirmed by partner|Hotel confirmed/i.test(b.confirmation?.status || '') || b.status === 'Confirmed') {
+      add({
+        id: `booking-${b._id}-confirmed`,
+        kind: 'Booking update', tone: 'reminder', icon: 'CircleCheck',
+        title: name, body: `Your booking ${b.code} is confirmed.`,
+        at, href: '/profile/bookings',
+      });
+    }
+
+    // A trip worth reminding them about, counted in whole days.
+    const start = b.checkIn || b.departureOn;
+    if (start && b.status !== 'Cancelled') {
+      const days = Math.ceil((new Date(start).getTime() - now) / 86400000);
+      if (days >= 0 && days <= 30) {
+        add({
+          id: `trip-${b._id}`,
+          kind: 'Trip reminder', tone: 'reminder', icon: 'PlaneTakeoff',
+          title: b.destination || name,
+          body: days === 0
+            ? 'Your trip starts today.'
+            : `Your trip to ${b.destination || name} is in ${days} ${days === 1 ? 'day' : 'days'}.`,
+          at, href: '/profile/bookings',
+        });
+      }
+    }
+  }
+
+  if (membership) {
+    const owed = Math.max(0, (membership.amount || 0) - (membership.paid || 0));
+    if (owed > 0) {
+      add({
+        id: `membership-${membership._id}-owed`,
+        kind: 'Membership', tone: 'offer', icon: 'Percent',
+        title: membership.planName || 'Your membership',
+        body: `₹${owed.toLocaleString('en-IN')} is left to pay before it starts.`,
+        at: membership.receivedOn || membership.createdAt,
+        cta: { label: 'Pay now', href: '/membership' },
+      });
+    }
+    if (membership.expiresOn) {
+      const days = Math.ceil((new Date(membership.expiresOn).getTime() - now) / 86400000);
+      if (days >= 0 && days <= 60) {
+        add({
+          id: `membership-${membership._id}-renewal`,
+          kind: 'Membership', tone: 'offer', icon: 'Percent',
+          title: `${membership.planName || 'Your membership'} is ending`,
+          body: `It runs out in ${days} ${days === 1 ? 'day' : 'days'}.`,
+          // When we noticed, not when it runs out: a date in the
+          // future is never older than the last time they looked, so
+          // this one could never be marked read.
+          at: membership.updatedAt || membership.receivedOn || membership.createdAt,
+          cta: { label: 'Renew', href: '/membership' },
+        });
+      }
+    }
+  }
+
+  for (const r of rewards) {
+    if (r.claimedOn) continue;
+    add({
+      id: `gift-${r._id}`,
+      kind: 'Gift', tone: 'offer', icon: 'Percent',
+      title: r.gift,
+      body: 'A gift on your account is waiting to be claimed.',
+      at: r.createdAt,
+      cta: { label: 'Claim it', href: '/profile/rewards' },
+    });
+  }
+
+  for (const o of offers) {
+    add({
+      id: `offer-${o._id}`,
+      kind: 'Exclusive offer', tone: 'offer', icon: 'Percent',
+      title: o.name,
+      body: o.description
+        || (o.kind === 'Percent off' ? `${o.value}% off with code ${o.couponCode || ''}`.trim() : `Use code ${o.couponCode || ''}`.trim()),
+      at: o.updatedAt || o.createdAt,
+      cta: { label: 'View offers', href: '/offers' },
+    });
+  }
+
+  out.sort((a, b) => new Date(b.at) - new Date(a.at));
+
+  res.json({
+    success: true,
+    count: out.length,
+    unread: out.filter((n) => n.unread).length,
+    data: out.slice(0, 30),
+  });
+});
+
+/** They have looked. Everything older than now has been seen. */
+exports.readNotifications = catchAsync(async (req, res) => {
+  await Customer.updateOne({ _id: req.member._id }, { $set: { notificationsReadAt: new Date() } });
+  res.json({ success: true, message: 'Marked as read' });
+});
+
 /* -- What the desk is selling -------------------------------------------- */
 
 /**

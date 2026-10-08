@@ -106,6 +106,8 @@ router.post('/member/wishlist', protectMember, c.wishlistWrite);
 router.get('/member/rewards', protectMember, c.memberRewards);
 router.post('/member/rewards/:id/claim', protectMember, c.claimReward);
 router.get('/member/referrals', protectMember, c.memberReferrals);
+router.get('/member/notifications', protectMember, c.memberNotifications);
+router.post('/member/notifications/read', protectMember, c.readNotifications);
 router.post('/member/refer', protectMember, perPhone, c.referSomeone);
 
 module.exports = router;
