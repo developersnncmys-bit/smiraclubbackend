@@ -1479,7 +1479,25 @@ function closedOn(item, on) {
 }
 
 /** One row of stock, as a card on the website reads it. */
-function forWebsite(item) {
+/** This deployment's own address. */
+const ourBase = (req) => `${req.protocol}://${req.get('host')}`;
+
+/**
+ * A file we hold, addressed by whoever is serving it.
+ *
+ * An upload stores the address of the machine that took it, so a cover
+ * added through a developer's backend is saved as localhost:9100/... and
+ * shows nothing anywhere else. The id is the part that means something
+ * and the database is shared, so the host is replaced with this one.
+ * Anything that is not one of ours is left exactly as it was.
+ */
+const ourFile = (url, base) => {
+  const ours = new RegExp('^https?://[^/]+(/api/uploads/[a-f0-9]{24})$', 'i');
+  const at = String(url || '').match(ours);
+  return at && base ? base + at[1] : url;
+};
+
+function forWebsite(item, base) {
   const selling = sellingRate(item.baseRate, item.markup);
   const member = memberRate(item.baseRate, item.markup, item.memberDiscount);
   const left = Math.max(0, (item.units || 0) - (item.booked || 0) - (item.blocked || 0));
@@ -1497,7 +1515,7 @@ function forWebsite(item) {
     checkIn: item.checkIn || '',
     checkOut: item.checkOut || '',
     amenities: item.amenities || [],
-    images: item.images || [],
+    images: (item.images || []).map((u) => ourFile(u, base)),
     /**
      * The rest of what a detail page draws. Nothing here is Smira's own
      * business — it is the property describing itself — so it goes out
@@ -1555,7 +1573,8 @@ exports.catalog = catchAsync(async (req, res) => {
     open = items.filter((item) => !nights.some((on) => closedOn(item, on)));
   }
 
-  res.json({ success: true, count: open.length, data: open.map(forWebsite) });
+  const base = ourBase(req);
+  res.json({ success: true, count: open.length, data: open.map((i) => forWebsite(i, base)) });
 });
 
 /** One thing the desk sells, by its code or its id. */
@@ -1564,7 +1583,7 @@ exports.catalogItem = catchAsync(async (req, res) => {
   const where = mongoose.isValidObjectId(id) ? { _id: id } : { code: String(id).toUpperCase() };
   const item = await InventoryItem.findOne({ ...where, status: { $in: ON_OFFER } }).lean({ virtuals: false });
   if (!item) throw ApiError.notFound('We do not have that one');
-  res.json({ success: true, data: forWebsite(item) });
+  res.json({ success: true, data: forWebsite(item, ourBase(req)) });
 });
 
 /**
@@ -1668,7 +1687,7 @@ exports.flashOffers = catchAsync(async (req, res) => {
     success: true,
     count: live.length,
     data: live.map((o) => {
-      const item = forWebsite(o.listing);
+      const item = forWebsite(o.listing, ourBase(req));
       const percent = Number(o.value) || 0;
       // Struck from what a member would otherwise pay, so the saving shown
       // is the saving they actually make.
@@ -1906,7 +1925,7 @@ exports.wishlistWrite = catchAsync(async (req, res) => {
  * has to know which of the two it is holding. `id` is the slug because
  * that is what the address bar shows.
  */
-const blogForWebsite = (b) => ({
+const blogForWebsite = (b, base) => ({
   id: b.slug,
   code: b.code,
   desk: true,
@@ -1918,7 +1937,7 @@ const blogForWebsite = (b) => ({
     ? new Date(b.publishedOn).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
     : '',
   readMins: b.readMins || 5,
-  image: b.coverUrl || '',
+  image: ourFile(b.coverUrl, base) || '',
   author: b.author || '',
   latest: Boolean(b.latest),
   popular: Boolean(b.popular),
@@ -1939,7 +1958,8 @@ exports.blogs = catchAsync(async (req, res) => {
     .limit(100)
     .lean();
 
-  res.json({ success: true, count: rows.length, data: rows.map(blogForWebsite) });
+  const base = ourBase(req);
+  res.json({ success: true, count: rows.length, data: rows.map((b) => blogForWebsite(b, base)) });
 });
 
 /**
@@ -1960,5 +1980,5 @@ exports.blogPost = catchAsync(async (req, res) => {
 
   Blog.updateOne({ _id: post._id }, { $inc: { views: 1 } }).catch(() => {});
 
-  res.json({ success: true, data: blogForWebsite(post) });
+  res.json({ success: true, data: blogForWebsite(post, ourBase(req)) });
 });
