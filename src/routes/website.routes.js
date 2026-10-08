@@ -91,6 +91,10 @@ router.get('/offers', c.liveOffers);
 // The short ones, with the listing and the clock attached.
 router.get('/offers/flash', c.flashOffers);
 
+/** The blog the desk writes in the panel. Published posts only. */
+router.get('/blogs', c.blogs);
+router.get('/blogs/:slug', c.blogPost);
+
 router.post('/member/otp', perAddress, perPhone, c.memberOtpRequest);
 router.post('/member/verify', perAddress, c.memberOtpVerify);
 router.get('/member/me', protectMember, c.memberMe);

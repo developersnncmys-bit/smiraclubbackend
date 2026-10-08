@@ -9,6 +9,7 @@ const Membership = require('../models/Membership');
 const MembershipPlan = require('../models/MembershipPlan');
 const InventoryItem = require('../models/InventoryItem');
 const Offer = require('../models/Offer');
+const Blog = require('../models/Blog');
 const Reward = require('../models/Reward');
 const Referral = require('../models/Referral');
 const ApiError = require('../helpers/ApiError');
@@ -1893,4 +1894,71 @@ exports.wishlistWrite = catchAsync(async (req, res) => {
   await member.save({ validateBeforeSave: false });
 
   res.json({ success: true, data: wishlistOut(member) });
+});
+
+/* -- The blog ------------------------------------------------------------- */
+
+/**
+ * A post, shaped the way the website's blog screens already read one.
+ *
+ * Those screens were written against the site's own bundled articles, so
+ * a post from the desk arrives in the same shape and nothing downstream
+ * has to know which of the two it is holding. `id` is the slug because
+ * that is what the address bar shows.
+ */
+const blogForWebsite = (b) => ({
+  id: b.slug,
+  code: b.code,
+  desk: true,
+  category: b.category || 'guide',
+  tag: b.tag || '',
+  title: b.title,
+  excerpt: b.excerpt || '',
+  date: b.publishedOn
+    ? new Date(b.publishedOn).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+    : '',
+  readMins: b.readMins || 5,
+  image: b.coverUrl || '',
+  author: b.author || '',
+  latest: Boolean(b.latest),
+  popular: Boolean(b.popular),
+  body: (b.body || []).map((s) => ({
+    h: s.h || '',
+    p: (s.p || []).filter(Boolean),
+    list: (s.list || []).filter(Boolean),
+  })),
+});
+
+/** Everything the desk has published, newest first. */
+exports.blogs = catchAsync(async (req, res) => {
+  const where = { status: 'Published' };
+  if (req.query.category) where.category = String(req.query.category);
+
+  const rows = await Blog.find(where)
+    .sort({ publishedOn: -1, createdAt: -1 })
+    .limit(100)
+    .lean();
+
+  res.json({ success: true, count: rows.length, data: rows.map(blogForWebsite) });
+});
+
+/**
+ * One article, by its slug or by the code the desk quotes.
+ *
+ * Reading it counts as a read. The count is advanced without waiting and
+ * without validating the document, because a failed counter must never be
+ * the reason a reader cannot see an article.
+ */
+exports.blogPost = catchAsync(async (req, res) => {
+  const key = String(req.params.slug || '').trim();
+  const post = await Blog.findOne({
+    status: 'Published',
+    $or: [{ slug: key.toLowerCase() }, { code: key.toUpperCase() }],
+  }).lean();
+
+  if (!post) throw ApiError.notFound('Post not found');
+
+  Blog.updateOne({ _id: post._id }, { $inc: { views: 1 } }).catch(() => {});
+
+  res.json({ success: true, data: blogForWebsite(post) });
 });

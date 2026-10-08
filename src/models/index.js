@@ -4,6 +4,7 @@ module.exports = {
   AuditLog: require('./AuditLog'),
   AutomationRule: require('./AutomationRule'),
   BotFlow: require('./BotFlow'),
+  Blog: require('./Blog'),
   Booking: require('./Booking'),
   Campaign: require('./Campaign'),
   Conversation: require('./Conversation'),

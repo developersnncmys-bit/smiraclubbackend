@@ -32,6 +32,7 @@ router.use('/automations', require('./automation.routes'));
 router.use('/rewards', require('./reward.routes'));
 router.use('/referrals', require('./referral.routes'));
 router.use('/offers', require('./offer.routes'));
+router.use('/blogs', require('./blog.routes'));
 
 router.use('/dashboard', require('./dashboard.routes'));
 router.use('/reports', require('./report.routes'));
@@ -56,7 +57,7 @@ router.get('/', (req, res) => {
       'auth', 'users', 'roles', 'leads', 'tasks', 'customers',
       'membership-plans', 'memberships', 'bookings', 'tickets', 'partners',
       'inventory', 'payments', 'invoices', 'refunds', 'expenses', 'approvals',
-      'whatsapp', 'automations', 'rewards', 'referrals', 'offers',
+      'whatsapp', 'automations', 'rewards', 'referrals', 'offers', 'blogs',
       'dashboard', 'reports', 'revenue', 'audit-logs', 'partner-portal', 'website', 'uploads', 'settings', 'scheduled-reports',
     ],
   });

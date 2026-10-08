@@ -170,6 +170,20 @@ const INVENTORY_CATEGORIES = [
   'Games',
 ];
 
+// -- Blog -------------------------------------------------------------------
+/**
+ * The website's blog chips, by the key its screens filter on. A post is
+ * filed under one of these; `tag` on the post is the words printed on the
+ * card, which the desk can word however it likes.
+ */
+const BLOG_CATEGORIES = [
+  { key: 'guide', label: 'Travel Guides' },
+  { key: 'hotel', label: 'Hotel Stays' },
+  { key: 'destination', label: 'Destinations' },
+];
+
+const BLOG_CATEGORY_KEYS = BLOG_CATEGORIES.map((c) => c.key);
+
 const RATE_TYPES = [
   'Standard rate',
   'B2B rate',
@@ -261,6 +275,8 @@ module.exports = {
   EXPENSE_CATEGORIES,
   INVENTORY_CATEGORIES,
   RATE_TYPES,
+  BLOG_CATEGORIES,
+  BLOG_CATEGORY_KEYS,
   MEMBERSHIP_TIERS,
   SALES_CHANNELS,
   CONVERSATION_CATEGORIES,
