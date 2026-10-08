@@ -1392,6 +1392,56 @@ exports.memberNotifications = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * What being a member has saved them, booking by booking.
+ *
+ * Every booking records what came off it: the member discount and any
+ * offer discount, both already subtracted from what they paid. Adding
+ * those up is the whole argument for the membership, and the website
+ * was making the figure up — twelve thousand nine hundred and
+ * ninety-nine, across six bookings, for every member who looked.
+ */
+exports.memberSavings = catchAsync(async (req, res) => {
+  const rows = await Booking.find({ customer: req.member._id, status: { $ne: 'Cancelled' } })
+    .sort({ createdAt: -1 })
+    .limit(100)
+    .lean();
+
+  const bookings = rows
+    .map((b) => {
+      const c = b.charges || {};
+      const membership = Number(c.membershipDiscount || 0);
+      const offer = Number(c.offerDiscount || 0);
+      return {
+        reference: b.code,
+        name: b.hotel || b.packageName || b.bookingType || 'Booking',
+        destination: b.destination || '',
+        kind: b.bookingType || '',
+        on: b.checkIn || b.departureOn || b.createdAt,
+        // What it would have come to without them, and what it did.
+        listed: Number(c.base || 0) + Number(c.meals || 0) + Number(c.extra || 0) + Number(c.taxes || 0),
+        paid: Number(b.amount || 0),
+        membership,
+        offer,
+        saved: membership + offer,
+      };
+    })
+    .filter((b) => b.saved > 0);
+
+  const total = bookings.reduce((s, b) => s + b.saved, 0);
+
+  res.json({
+    success: true,
+    data: {
+      total,
+      across: bookings.length,
+      onMembership: bookings.reduce((s, b) => s + b.membership, 0),
+      onOffers: bookings.reduce((s, b) => s + b.offer, 0),
+      bookings,
+    },
+  });
+});
+
 /** They have looked. Everything older than now has been seen. */
 exports.readNotifications = catchAsync(async (req, res) => {
   await Customer.updateOne({ _id: req.member._id }, { $set: { notificationsReadAt: new Date() } });

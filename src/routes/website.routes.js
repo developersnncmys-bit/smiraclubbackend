@@ -107,6 +107,7 @@ router.get('/member/rewards', protectMember, c.memberRewards);
 router.post('/member/rewards/:id/claim', protectMember, c.claimReward);
 router.get('/member/referrals', protectMember, c.memberReferrals);
 router.get('/member/notifications', protectMember, c.memberNotifications);
+router.get('/member/savings', protectMember, c.memberSavings);
 router.post('/member/notifications/read', protectMember, c.readNotifications);
 router.post('/member/refer', protectMember, perPhone, c.referSomeone);
 
