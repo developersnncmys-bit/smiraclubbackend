@@ -12,6 +12,7 @@ module.exports = {
   Customer: require('./Customer'),
   Expense: require('./Expense'),
   Hold: require('./Hold'),
+  HomeOffer: require('./HomeOffer'),
   InventoryItem: require('./InventoryItem'),
   Invoice: require('./Invoice'),
   Lead: require('./Lead'),

@@ -95,6 +95,9 @@ router.get('/offers/flash', c.flashOffers);
 router.get('/blogs', c.blogs);
 router.get('/blogs/:slug', c.blogPost);
 
+/** The Grab Offers strip the desk arranges in the panel. */
+router.get('/home-offers', c.homeOffers);
+
 router.post('/member/otp', perAddress, perPhone, c.memberOtpRequest);
 router.post('/member/verify', perAddress, c.memberOtpVerify);
 router.get('/member/me', protectMember, c.memberMe);

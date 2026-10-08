@@ -176,6 +176,23 @@ const INVENTORY_CATEGORIES = [
  * filed under one of these; `tag` on the post is the words printed on the
  * card, which the desk can word however it likes.
  */
+// -- The home page Grab Offers strip ----------------------------------------
+/**
+ * The three tabs the website's Grab Offers strip filters on. A card sits
+ * under exactly one of them; "All" is the filter, not a home for a card.
+ */
+const HOME_OFFER_TABS = ['Weekend', 'Seasonal', 'Salon & Spa'];
+
+/**
+ * The colours a card can be.
+ *
+ * A named set rather than a hex the desk types, because the website's
+ * gradients are Tailwind classes compiled at build time — a colour that
+ * was not in the source when it was built produces no class at all, and
+ * the card comes out transparent.
+ */
+const HOME_OFFER_TONES = ['indigo', 'blue', 'plum', 'forest', 'ember', 'slate'];
+
 const BLOG_CATEGORIES = [
   { key: 'guide', label: 'Travel Guides' },
   { key: 'hotel', label: 'Hotel Stays' },
@@ -276,6 +293,8 @@ module.exports = {
   INVENTORY_CATEGORIES,
   RATE_TYPES,
   BLOG_CATEGORIES,
+  HOME_OFFER_TABS,
+  HOME_OFFER_TONES,
   BLOG_CATEGORY_KEYS,
   MEMBERSHIP_TIERS,
   SALES_CHANNELS,

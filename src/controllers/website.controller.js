@@ -10,6 +10,7 @@ const MembershipPlan = require('../models/MembershipPlan');
 const InventoryItem = require('../models/InventoryItem');
 const Offer = require('../models/Offer');
 const Blog = require('../models/Blog');
+const HomeOffer = require('../models/HomeOffer');
 const Reward = require('../models/Reward');
 const Referral = require('../models/Referral');
 const ApiError = require('../helpers/ApiError');
@@ -1981,4 +1982,37 @@ exports.blogPost = catchAsync(async (req, res) => {
   Blog.updateOne({ _id: post._id }, { $inc: { views: 1 } }).catch(() => {});
 
   res.json({ success: true, data: blogForWebsite(post, ourBase(req)) });
+});
+
+/* -- The home page Grab Offers strip -------------------------------------- */
+
+/**
+ * A card, shaped the way the strip already reads one.
+ *
+ * Same contract as everything else here: the website's own bundled cards
+ * and the desk's arrive identically, so the component cannot tell them
+ * apart. `tone` is a name the website maps to a gradient, never a colour,
+ * because the gradient has to exist in the stylesheet it was built with.
+ */
+const homeOfferForWebsite = (o, base) => ({
+  id: o.code,
+  desk: true,
+  tab: o.tab,
+  badge: o.badge || '',
+  title: o.title,
+  points: (o.points || []).filter(Boolean),
+  href: o.href || '/offers',
+  image: ourFile(o.imageUrl, base) || '',
+  tone: o.tone || 'indigo',
+});
+
+/** The strip, in the order the desk arranged it. Live cards only. */
+exports.homeOffers = catchAsync(async (req, res) => {
+  const rows = await HomeOffer.find({ status: 'Live' })
+    .sort('order createdAt')
+    .limit(24)
+    .lean();
+
+  const base = ourBase(req);
+  res.json({ success: true, count: rows.length, data: rows.map((o) => homeOfferForWebsite(o, base)) });
 });
