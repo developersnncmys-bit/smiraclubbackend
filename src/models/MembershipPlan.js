@@ -57,7 +57,6 @@ const planSchema = new mongoose.Schema(
      * deadline, which is why nothing here defaults to a date — an
      * invented expiry is a worse promise than none.
      */
-    giftsEndOn: Date,
     /**
      * How many of the gifts a member may pick.
      *

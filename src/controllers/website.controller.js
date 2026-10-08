@@ -908,7 +908,7 @@ exports.plans = catchAsync(async (req, res) => {
     .sort({ sortOrder: 1, price: 1 })
     .select(
       'code name shortLabel tagline blurb price billing discount durationMonths persons rooms ' +
-        'freeStay privileges services gifts giftsEndOn giftChoices features popular sortOrder accent sharing',
+        'freeStay privileges services gifts giftChoices features popular sortOrder accent sharing',
     )
     .lean();
   res.set('Cache-Control', 'public, max-age=60');
