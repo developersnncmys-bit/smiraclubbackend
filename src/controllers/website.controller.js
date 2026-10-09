@@ -750,6 +750,11 @@ exports.membership = catchAsync(async (req, res) => {
     city: customer.city,
     plan: plan._id,
     planName: plan.name,
+    // What they chose, kept as data rather than only as a note, so the
+    // website can tell what this member actually holds.
+    privileges: list(b.privileges),
+    gifts: list(b.gifts),
+    sharing: Boolean(b.sharing),
     movement: 'New',
     source: from.source,
     receivedOn: new Date(),
@@ -996,7 +1001,10 @@ exports.memberOtpVerify = catchAsync(async (req, res) => {
 
   const customer = await customerByPhone(digits);
   const membership = customer
-    ? await Membership.findOne({ customer: customer._id, status: { $ne: 'Cancelled' } }).sort({ receivedOn: -1 }).lean()
+    ? await Membership.findOne({ customer: customer._id, status: { $ne: 'Cancelled' } })
+        .sort({ receivedOn: -1 })
+        .populate('plan', 'privileges name')
+        .lean()
     : null;
 
   res.json({
@@ -1024,6 +1032,15 @@ exports.memberOtpVerify = catchAsync(async (req, res) => {
             reference: membership.code,
             status: membership.activation?.stage === 'Activated' ? 'Active' : membership.activation?.stage || membership.status,
             expiresOn: membership.expiresOn || null,
+            startedOn: membership.startedOn || membership.receivedOn || null,
+            /*
+             * Which services this member actually holds, and how many the
+             * plan allows. A booking screen checks itself against this
+             * before offering a rate the membership does not cover.
+             */
+            privileges: membership.privileges || [],
+            privilegesAllowed: membership.plan?.privileges ?? 0,
+            gifts: membership.gifts || [],
           }
         : null,
     },
@@ -1078,7 +1095,10 @@ const bookingForMember = (b) => ({
 exports.memberMe = catchAsync(async (req, res) => {
   const me = req.member;
   const [membership, bookings] = await Promise.all([
-    Membership.findOne({ customer: me._id, status: { $ne: 'Cancelled' } }).sort({ receivedOn: -1 }).lean(),
+    Membership.findOne({ customer: me._id, status: { $ne: 'Cancelled' } })
+      .sort({ receivedOn: -1 })
+      .populate('plan', 'privileges name')
+      .lean(),
     Booking.find({ customer: me._id }).sort({ createdAt: -1 }).limit(50).lean(),
   ]);
 
@@ -1093,6 +1113,15 @@ exports.memberMe = catchAsync(async (req, res) => {
             reference: membership.code,
             status: membership.activation?.stage === 'Activated' ? 'Active' : membership.activation?.stage || membership.status,
             expiresOn: membership.expiresOn || null,
+            startedOn: membership.startedOn || membership.receivedOn || null,
+            /*
+             * Which services this member actually holds, and how many the
+             * plan allows. A booking screen checks itself against this
+             * before offering a rate the membership does not cover.
+             */
+            privileges: membership.privileges || [],
+            privilegesAllowed: membership.plan?.privileges ?? 0,
+            gifts: membership.gifts || [],
           }
         : null,
       bookings: bookings.map(bookingForMember),

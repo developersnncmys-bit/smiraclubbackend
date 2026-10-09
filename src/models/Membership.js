@@ -27,6 +27,22 @@ const membershipSchema = new mongoose.Schema(
     plan: { type: mongoose.Schema.Types.ObjectId, ref: 'MembershipPlan', required: true },
     planName: String,
     members: { type: Number, default: 1 },
+
+    /**
+     * The privileges this member chose, by key.
+     *
+     * A plan says how many a member may hold; this is which ones they
+     * took. They were written into the timeline as a sentence and then
+     * forgotten, so the website could never tell whether the service
+     * somebody was booking was one they had paid for.
+     */
+    privileges: [String],
+
+    /** The welcome gifts they picked, by name, for the same reason. */
+    gifts: [String],
+
+    /** Whether they asked for the membership to be shareable. */
+    sharing: { type: Boolean, default: false },
     movement: { type: String, enum: MOVEMENTS, default: 'New' },
 
     source: String,
