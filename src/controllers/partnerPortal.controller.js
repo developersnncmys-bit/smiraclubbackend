@@ -244,6 +244,22 @@ const CATEGORIES = ['Hotel', 'Villa', 'Package', 'Lifestyle', 'Transport', 'Rest
 const clean = (v, max = 200) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 
 /**
+ * The listing form's own word for a category.
+ *
+ * Step one asks what kind of property it is, and registering has just
+ * been told. Anything without an obvious twin is left for them to pick.
+ */
+const PROPERTY_TYPE_OF = {
+  Hotel: 'Hotel',
+  Villa: 'Villa',
+  Restaurant: 'Restaurant',
+  Activity: 'Activity',
+  Package: 'Package',
+  Transport: 'Transport',
+  Spa: 'Spa & Salon',
+};
+
+/**
  * Register a partner from the short form.
  *
  * The five-step listing comes afterwards, once they are signed in — this
@@ -300,6 +316,31 @@ exports.register = catchAsync(async (req, res) => {
     website: clean(b.website, 300),
     passwordHash: await bcrypt.hash(password, 10),
     termsAcceptedAt: new Date(),
+
+    /*
+     * Step one of the five, already filled in. A partner who has just
+     * typed their name, email and city should not be asked for them
+     * again on the next screen.
+     */
+    listing: {
+      account: {
+        fullName: clean(b.ownerName, 120),
+        email,
+        accountType: 'Hotel / Property',
+      },
+      property: {
+        name,
+        type: PROPERTY_TYPE_OF[b.category] || '',
+        contactName: clean(b.ownerName, 120),
+        contactPhone: `+91 ${digits}`,
+        contactEmail: email,
+      },
+      location: {
+        line1: clean(b.address, 400),
+        city: clean(b.city, 80),
+        country: 'India',
+      },
+    },
     stage: 'Registration',
     status: 'Pending',
     approval: 'Waiting',
