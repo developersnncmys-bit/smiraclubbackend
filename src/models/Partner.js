@@ -259,6 +259,28 @@ const partnerSchema = new mongoose.Schema(
     whatsapp: String,
     email: { type: String, lowercase: true, trim: true },
 
+    /**
+     * Signing in with an email and a password, as well as by code.
+     *
+     * A one-time code to a phone is fine for a person on a phone and a
+     * nuisance for a desk that opens the portal every morning. Both doors
+     * reach the same account, so a partner uses whichever suits them.
+     *
+     * `select: false` keeps the hash out of every ordinary read — it is
+     * only ever asked for by name, when somebody is signing in.
+     */
+    passwordHash: { type: String, select: false },
+
+    /** Who runs it, as distinct from what it is called. */
+    ownerName: { type: String, trim: true, maxlength: 120 },
+    city: { type: String, trim: true, maxlength: 80 },
+    address: { type: String, trim: true, maxlength: 400 },
+    /** A website, or whichever social page they actually keep up. */
+    website: { type: String, trim: true, maxlength: 300 },
+
+    /** When they accepted the terms, because "yes" with no date is not one. */
+    termsAcceptedAt: Date,
+
     // -- Papers -------------------------------------------------------------
     gst: String,
     pan: String,

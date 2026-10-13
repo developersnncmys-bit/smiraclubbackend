@@ -43,9 +43,21 @@ const perAddress = rateLimit({
 router.post('/otp/request', requestsPerAddress, perPhone, c.requestOtp);
 router.post('/otp/verify', perAddress, c.verifyOtp);
 
+/**
+ * The short registration form, and the email-and-password door.
+ *
+ * Both are open, so both are capped per address the same way the code
+ * request is — a password form nobody is rate limiting is a guessing
+ * machine.
+ */
+router.post('/register', requestsPerAddress, c.register);
+router.post('/login', perAddress, c.login);
+
 router.use(protectPartner);
 
 // The five-step listing, then submitting it for review.
+router.post('/password', c.setPassword);
+
 router.get('/listing', c.getListing);
 router.put('/listing', c.saveListing);
 router.post('/listing/submit', c.submitListing);

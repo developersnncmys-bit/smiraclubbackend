@@ -233,6 +233,116 @@ exports.verifyOtp = catchAsync(async (req, res) => {
   res.json({ success: true, token: sign(partner), data: { ...shape(partner), isNew } });
 });
 
+
+// -- Registering, and signing in with a password ---------------------------
+
+const PASSWORD_MIN = 8;
+
+/** The categories the desk files a partner under. */
+const CATEGORIES = ['Hotel', 'Villa', 'Package', 'Lifestyle', 'Transport', 'Restaurant', 'Activity', 'Spa'];
+
+const clean = (v, max = 200) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+
+/**
+ * Register a partner from the short form.
+ *
+ * The five-step listing comes afterwards, once they are signed in — this
+ * is only enough to know who they are and to let them back in. The phone
+ * must already have been proved by code, so the account cannot be opened
+ * against somebody else’s number.
+ */
+exports.register = catchAsync(async (req, res) => {
+  const b = req.body || {};
+
+  const name = clean(b.name, 120);
+  const email = clean(b.email, 160).toLowerCase();
+  const digits = Partner.digits(b.phone);
+  const password = String(b.password || "");
+
+  if (!name) throw ApiError.badRequest("The business needs a name");
+  if (!digits || digits.length !== 10) throw ApiError.badRequest("A ten-digit mobile number, please");
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw ApiError.badRequest("That email does not look right");
+  if (password.length < PASSWORD_MIN) {
+    throw ApiError.badRequest(`A password of at least ${PASSWORD_MIN} characters`);
+  }
+  if (!b.termsAccepted) throw ApiError.badRequest("The terms have to be accepted");
+
+  if (await Partner.findOne({ phoneDigits: digits })) {
+    throw ApiError.badRequest("That number is already registered — sign in instead");
+  }
+  if (await Partner.findOne({ email })) {
+    throw ApiError.badRequest("That email is already registered — sign in instead");
+  }
+
+  /*
+   * The number has to have been proved first. The code request already
+   * wrote a challenge against it; registering spends it, so nobody can
+   * open an account on a number they do not hold.
+   */
+  const code = String(b.code || "").replace(/\D/g, "");
+  if (!code) throw ApiError.badRequest("Verify the mobile number first");
+  const challenge = await OtpChallenge.findOne({
+    phoneDigits: digits,
+    purpose: 'partner-signup',
+  }).select('+codeHash');
+  if (!challenge) throw ApiError.unauthorized("Ask for a code and type it in");
+  await spend(challenge, code, () => challenge.save());
+  await challenge.deleteOne();
+
+  const partner = new Partner({
+    name,
+    ownerName: clean(b.ownerName, 120),
+    email,
+    phone: `+91 ${digits}`,
+    category: CATEGORIES.includes(b.category) ? b.category : "Hotel",
+    city: clean(b.city, 80),
+    address: clean(b.address, 400),
+    website: clean(b.website, 300),
+    passwordHash: await bcrypt.hash(password, 10),
+    termsAcceptedAt: new Date(),
+    stage: 'Registration',
+    status: 'Pending',
+    approval: 'Waiting',
+    verification: 'Waiting',
+    submittedOn: new Date(),
+    activities: [{ at: new Date(), text: 'Registered in the partner portal' }],
+  });
+  await partner.save();
+
+  res.status(201).json({ success: true, token: sign(partner), data: { ...shape(partner), isNew: true } });
+});
+
+/**
+ * Sign in with an email and a password.
+ *
+ * Wrong email and wrong password give the same answer, so the form
+ * cannot be used to find out which emails are registered.
+ */
+exports.login = catchAsync(async (req, res) => {
+  const email = clean(req.body?.email, 160).toLowerCase();
+  const password = String(req.body?.password || "");
+  if (!email || !password) throw ApiError.badRequest("Email and password, please");
+
+  const partner = await Partner.findOne({ email }).select('+passwordHash');
+  const ok = partner?.passwordHash && (await bcrypt.compare(password, partner.passwordHash));
+  if (!ok) throw ApiError.unauthorized("That email and password do not match");
+
+  partner.lastLoginAt = new Date();
+  await partner.save({ validateBeforeSave: false });
+
+  res.json({ success: true, token: sign(partner), data: { ...shape(partner), isNew: false } });
+});
+
+/** Set or change the password of whoever is signed in. */
+exports.setPassword = catchAsync(async (req, res) => {
+  const password = String(req.body?.password || "");
+  if (password.length < PASSWORD_MIN) {
+    throw ApiError.badRequest(`A password of at least ${PASSWORD_MIN} characters`);
+  }
+  req.partner.passwordHash = await bcrypt.hash(password, 10);
+  await req.partner.save({ validateBeforeSave: false });
+  res.json({ success: true, message: "Password saved" });
+});
 // -- The five-step listing ---------------------------------------------------
 
 exports.getListing = catchAsync(async (req, res) => {
