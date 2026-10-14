@@ -191,6 +191,26 @@ const listingSchema = new mongoose.Schema(
       closedDates: str,
       blackoutDates: str,
     },
+
+    /**
+     * What a night costs, date by date.
+     *
+     * One rate for the whole property made a Saturday in December cost
+     * what a Tuesday in June costs, and the member was quoted that one
+     * number whatever dates they picked. The partner sets the ones that
+     * differ; any date they leave out falls back to the standard tariff.
+     *
+     * `closed` is the property saying it is not taking that night, which
+     * is a different thing from having no rate for it.
+     */
+    calendar: [
+      {
+        _id: false,
+        date: { type: String, trim: true, maxlength: 10 },
+        rate: num,
+        closed: { type: Boolean, default: false },
+      },
+    ],
     policies: {
       checkIn: str,
       checkOut: str,

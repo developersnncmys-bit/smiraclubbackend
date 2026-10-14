@@ -147,6 +147,21 @@ async function publishListing(partner, { by } = {}) {
   const hours = hoursFrom(listing);
 
   const rooms = roomsFrom(listing);
+
+  /*
+   * The partner's calendar, as the day-by-day record the website
+   * reads. A closed night keeps a rate on it so the desk can see what
+   * it would have cost; `left: 0` is what actually closes it.
+   */
+  const calendar = (listing.calendar || [])
+    .filter((d) => d && d.date)
+    .map((d) => ({
+      date: new Date(`${d.date}T00:00:00`),
+      rate: num(d.rate) || undefined,
+      left: d.closed ? 0 : undefined,
+      note: d.closed ? 'Closed by the property' : undefined,
+    }))
+    .filter((d) => !Number.isNaN(d.date.getTime()));
   const units = num(inv.totalRooms) || rooms.reduce((s, r) => s + num(r.count), 0) || 1;
   const category = CATEGORY_OF[prop.type] || FALLBACK[partner.category] || 'Hotels';
 
@@ -168,6 +183,7 @@ async function publishListing(partner, { by } = {}) {
     rooms,
     units,
     baseRate: num(listing.pricing?.partnerRate),
+    availability: calendar,
     /**
      * Everything the detail pages print, exactly as the partner gave it —
      * plus whether this is a free stay, which is not something the partner
@@ -181,8 +197,9 @@ async function publishListing(partner, { by } = {}) {
   const already = await InventoryItem.findOne({ partner: partner._id });
 
   if (already) {
-    // The desk's own columns are left alone: markup, status, what is booked
-    // or blocked, and anything they have set day by day.
+    // The desk's own columns are left alone: markup, status, and what is
+    // booked or blocked. The calendar is the partner’s, so it is theirs
+    // to replace — it is the only place a per-night rate comes from.
     Object.assign(already, fromPartner);
     already.updatedBy = by;
     await already.save();

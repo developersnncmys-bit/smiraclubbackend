@@ -1497,15 +1497,92 @@ exports.readNotifications = catchAsync(async (req, res) => {
  * member a blank screen.
  */
 
+/**
+ * A date as the calendar in the room writes it.
+ *
+ * toISOString converts to UTC first, so midnight on the 1st in India
+ * is 18:30 on the 31st in UTC and every date comes out a day early.
+ * Rates and closures are about the day on the wall, not the meridian.
+ */
+const ymd = (d) => {
+  const at = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(at.getTime())) return "";
+  const pad = (x) => String(x).padStart(2, "0");
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
+};
+
 /** Sold out and Blocked are not on offer; the rest are. */
 const ON_OFFER = ['Active', 'Limited', 'Low'];
 
 /** A date the desk has closed, or a day it has emptied, is not bookable. */
 function closedOn(item, on) {
-  const key = (d) => new Date(d).toISOString().slice(0, 10);
+  const key = ymd;
   if ((item.blackouts || []).some((b) => on >= key(b.from) && on <= key(b.to || b.from))) return true;
   const override = (item.availability || []).find((a) => key(a.date) === on);
   return Boolean(override && Number(override.left || 0) <= 0);
+}
+
+/** The nights of a stay: check-in up to but not including check-out. */
+function nightsBetween(from, to) {
+  const start = new Date(`${from}T00:00:00`);
+  const end = to ? new Date(`${to}T00:00:00`) : start;
+  if (Number.isNaN(start.getTime())) return [];
+
+  const out = [];
+  for (let d = new Date(start); out.length < 60; d.setDate(d.getDate() + 1)) {
+    out.push(ymd(d));
+    if (d >= end || out.length >= 60) break;
+  }
+  // A stay of one night is one night, not two.
+  return out.length > 1 ? out.slice(0, -1) : out;
+}
+
+/**
+ * What the property charges for a given night.
+ *
+ * The calendar the partner filled in, where they set that date; the
+ * standard tariff where they did not. Nothing here is the desk’s or
+ * the member’s to change — it is the price the property published.
+ */
+function rateOn(item, on) {
+  const key = ymd;
+  const day = (item.availability || []).find((a) => key(a.date) === on);
+  const set = Number(day?.rate || 0);
+  return set > 0 ? set : Number(item.baseRate || 0);
+}
+
+/**
+ * A stay priced night by night, or null when no dates were asked for.
+ *
+ * `nights` is what each one costs, so a detail page can show the
+ * member where the total came from rather than one number they have
+ * to take on trust.
+ */
+function quoteFor(item, from, to) {
+  if (!from) return null;
+  const nights = nightsBetween(from, to);
+  if (!nights.length) return null;
+
+  const rows = nights.map((on) => {
+    const base = rateOn(item, on);
+    return {
+      date: on,
+      base,
+      member: memberRate(base, item.markup, item.memberDiscount),
+      was: sellingRate(base, item.markup),
+      closed: closedOn(item, on),
+    };
+  });
+
+  return {
+    from,
+    to: to || from,
+    nights: rows,
+    count: rows.length,
+    total: rows.reduce((n, r) => n + r.member, 0),
+    wasTotal: rows.reduce((n, r) => n + r.was, 0),
+    anyClosed: rows.some((r) => r.closed),
+  };
 }
 
 /** One row of stock, as a card on the website reads it. */
@@ -1527,7 +1604,7 @@ const ourFile = (url, base) => {
   return at && base ? base + at[1] : url;
 };
 
-function forWebsite(item, base) {
+function forWebsite(item, base, stay) {
   const selling = sellingRate(item.baseRate, item.markup);
   const member = memberRate(item.baseRate, item.markup, item.memberDiscount);
   const left = Math.max(0, (item.units || 0) - (item.booked || 0) - (item.blocked || 0));
@@ -1544,6 +1621,20 @@ function forWebsite(item, base) {
     gps: item.gps || '',
     checkIn: item.checkIn || '',
     checkOut: item.checkOut || '',
+
+    /*
+     * What the property charges, night by night, and what this stay
+     * comes to. Both are the partner’s own numbers; the member picks
+     * dates, never a price.
+     */
+    calendar: (item.availability || [])
+      .filter((a) => a && a.date)
+      .map((a) => ({
+        date: ymd(a.date),
+        rate: Number(a.rate || 0) || null,
+        closed: Number(a.left ?? 1) <= 0,
+      })),
+    quote: quoteFor(item, stay?.from, stay?.to),
     amenities: item.amenities || [],
     images: (item.images || []).map((u) => ourFile(u, base)),
     /**
@@ -1604,7 +1695,8 @@ exports.catalog = catchAsync(async (req, res) => {
   }
 
   const base = ourBase(req);
-  res.json({ success: true, count: open.length, data: open.map((i) => forWebsite(i, base)) });
+  const stay = { from, to };
+  res.json({ success: true, count: open.length, data: open.map((i) => forWebsite(i, base, stay)) });
 });
 
 /** One thing the desk sells, by its code or its id. */
@@ -1613,7 +1705,10 @@ exports.catalogItem = catchAsync(async (req, res) => {
   const where = mongoose.isValidObjectId(id) ? { _id: id } : { code: String(id).toUpperCase() };
   const item = await InventoryItem.findOne({ ...where, status: { $in: ON_OFFER } }).lean({ virtuals: false });
   if (!item) throw ApiError.notFound('We do not have that one');
-  res.json({ success: true, data: forWebsite(item, ourBase(req)) });
+  res.json({
+    success: true,
+    data: forWebsite(item, ourBase(req), { from: req.query.from, to: req.query.to }),
+  });
 });
 
 /**

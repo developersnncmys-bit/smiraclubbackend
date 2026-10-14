@@ -396,6 +396,7 @@ exports.getListing = catchAsync(async (req, res) => {
 const SECTIONS = [
   'account', 'property', 'location', 'rooms', 'photos', 'amenities', 'facilities',
   'rules', 'pricing', 'inventory', 'policies', 'ownership', 'bank',
+  'calendar',
 ];
 
 /** A property type, filed under the category the desk filters by. */
