@@ -184,6 +184,16 @@ const listingSchema = new mongoose.Schema(
       extraAdultRate: num,
       childRate: num,
       mealPlans: [{ type: String, enum: ['EP — Room only', 'CP — Breakfast', 'MAP — Breakfast + Dinner', 'AP — All meals'] }],
+
+      /**
+       * What the food costs on a free stay, per person per day.
+       *
+       * The room is the part that is free. This is the part that is
+       * not, and the member is quoted it — so it has to come from the
+       * property rather than be guessed at the desk.
+       */
+      vegMealRate: num,
+      nonVegMealRate: num,
     },
     inventory: {
       totalRooms: num,
@@ -266,7 +276,7 @@ const partnerSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     category: {
       type: String,
-      enum: ['Hotel', 'Villa', 'Package', 'Lifestyle', 'Transport', 'Restaurant', 'Activity', 'Spa'],
+      enum: ['Hotel', 'Villa', 'Package', 'Lifestyle', 'Transport', 'Restaurant', 'Activity', 'Spa', 'Travel agent'],
       default: 'Hotel',
     },
     businessType: String,
@@ -290,6 +300,14 @@ const partnerSchema = new mongoose.Schema(
      * only ever asked for by name, when somebody is signing in.
      */
     passwordHash: { type: String, select: false },
+
+    /**
+     * The brand or channel they sell under.
+     *
+     * A trading name and a brand are not always the same — a chain
+     * runs several, and an agent sells under one that is not theirs.
+     */
+    brand: { type: String, trim: true, maxlength: 120 },
 
     /** Who runs it, as distinct from what it is called. */
     ownerName: { type: String, trim: true, maxlength: 120 },

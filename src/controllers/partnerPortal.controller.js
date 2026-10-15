@@ -239,7 +239,7 @@ exports.verifyOtp = catchAsync(async (req, res) => {
 const PASSWORD_MIN = 8;
 
 /** The categories the desk files a partner under. */
-const CATEGORIES = ['Hotel', 'Villa', 'Package', 'Lifestyle', 'Transport', 'Restaurant', 'Activity', 'Spa'];
+const CATEGORIES = ['Hotel', 'Villa', 'Package', 'Lifestyle', 'Transport', 'Restaurant', 'Activity', 'Spa', 'Travel agent'];
 
 const clean = (v, max = 200) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 
@@ -308,6 +308,7 @@ exports.register = catchAsync(async (req, res) => {
   const partner = new Partner({
     name,
     ownerName: clean(b.ownerName, 120),
+    brand: clean(b.brand, 120),
     email,
     phone: `+91 ${digits}`,
     category: CATEGORIES.includes(b.category) ? b.category : "Hotel",
