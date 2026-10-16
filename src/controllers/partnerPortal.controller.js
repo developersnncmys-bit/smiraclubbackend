@@ -553,9 +553,9 @@ exports.dashboard = catchAsync(async (req, res) => {
 
   const [bookings, stock, tickets] = await Promise.all([
     // A booking reaches its partner once the desk has confirmed it; until then it is the desk's.
-    Booking.find({ vendor: me._id, status: { $ne: 'Pending' } }).sort({ checkIn: 1 }).limit(200).lean(),
+    Booking.find({ vendor: me._id, status: { $ne: 'Pending' } }).sort({ checkIn: 1 }).lean(),
     InventoryItem.find({ partner: me._id }).lean(),
-    Ticket.find({ partner: me._id }).sort({ createdAt: -1 }).limit(50).lean(),
+    Ticket.find({ partner: me._id }).sort({ createdAt: -1 }).lean(),
   ]);
 
   const today = startOfDay();

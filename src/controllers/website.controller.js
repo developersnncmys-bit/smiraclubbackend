@@ -1099,7 +1099,7 @@ exports.memberMe = catchAsync(async (req, res) => {
       .sort({ receivedOn: -1 })
       .populate('plan', 'privileges name')
       .lean(),
-    Booking.find({ customer: me._id }).sort({ createdAt: -1 }).limit(50).lean(),
+    Booking.find({ customer: me._id }).sort({ createdAt: -1 }).lean(),
   ]);
 
   res.json({
@@ -1139,7 +1139,6 @@ exports.memberMe = catchAsync(async (req, res) => {
 exports.memberRewards = catchAsync(async (req, res) => {
   const rows = await Reward.find({ customer: req.member._id })
     .sort({ createdAt: -1 })
-    .limit(50)
     .lean();
 
   res.json({
@@ -1209,7 +1208,7 @@ exports.memberReferrals = catchAsync(async (req, res) => {
   const me = req.member;
   const [code, rows] = await Promise.all([
     referralCodeFor(me),
-    Referral.find({ referrer: me._id }).sort({ createdAt: -1 }).limit(50).lean(),
+    Referral.find({ referrer: me._id }).sort({ createdAt: -1 }).lean(),
   ]);
 
   const earned = rows.filter((r) => r.paid).reduce((s, r) => s + Number(r.reward || 0), 0);
@@ -1435,7 +1434,6 @@ exports.memberNotifications = catchAsync(async (req, res) => {
 exports.memberSavings = catchAsync(async (req, res) => {
   const rows = await Booking.find({ customer: req.member._id, status: { $ne: 'Cancelled' } })
     .sort({ createdAt: -1 })
-    .limit(100)
     .lean();
 
   const bookings = rows
@@ -1679,7 +1677,6 @@ exports.catalog = catchAsync(async (req, res) => {
 
   const items = await InventoryItem.find(where)
     .sort({ category: 1, name: 1 })
-    .limit(200)
     .lean({ virtuals: false });
 
   let open = items;
@@ -1759,7 +1756,6 @@ exports.liveOffers = catchAsync(async (req, res) => {
     ],
   })
     .sort({ endsOn: 1, createdAt: -1 })
-    .limit(50)
     .lean();
 
   res.json({
@@ -1802,7 +1798,6 @@ exports.flashOffers = catchAsync(async (req, res) => {
     endsOn: { $gte: now },
   })
     .sort({ endsOn: 1 })
-    .limit(12)
     .populate('listing')
     .lean();
 
@@ -2080,7 +2075,6 @@ exports.blogs = catchAsync(async (req, res) => {
 
   const rows = await Blog.find(where)
     .sort({ publishedOn: -1, createdAt: -1 })
-    .limit(100)
     .lean();
 
   const base = ourBase(req);
@@ -2134,7 +2128,6 @@ const homeOfferForWebsite = (o, base) => ({
 exports.homeOffers = catchAsync(async (req, res) => {
   const rows = await HomeOffer.find({ status: 'Live' })
     .sort('order createdAt')
-    .limit(24)
     .lean();
 
   const base = ourBase(req);

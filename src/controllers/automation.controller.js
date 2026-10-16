@@ -64,7 +64,7 @@ exports.options = catchAsync(async (req, res) => {
 exports.history = catchAsync(async (req, res) => {
   const rows = await AuditLog.find({ entity: 'Automation rule' })
     .sort('-createdAt')
-    .limit(Number(req.query.limit) || 100)
+    .limit(Number(req.query.limit) || 0)
     .lean();
   res.json({ success: true, data: rows });
 });

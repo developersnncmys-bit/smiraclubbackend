@@ -60,13 +60,25 @@ function buildFilter(query, { searchable = [], allowed = null } = {}) {
   return filter;
 }
 
-function buildOptions(query, { defaultSort = '-createdAt', maxLimit = 200 } = {}) {
+/**
+ * `limit=all` — or `limit=0` — means every row, no paging.
+ *
+ * There used to be a ceiling of 200 here, which the panel quietly hit on
+ * any collection that grew past it: the 201st record existed and no
+ * screen ever showed it. A caller that wants a page still gets one.
+ */
+function buildOptions(query, { defaultSort = '-createdAt', maxLimit = 0 } = {}) {
   const page = Math.max(1, Number(query.page) || 1);
-  const limit = Math.min(maxLimit, Math.max(1, Number(query.limit) || 25));
+
+  const asked = String(query.limit === undefined ? '' : query.limit).trim().toLowerCase();
+  const everything = asked === 'all' || asked === '0';
+  const wanted = Math.max(1, Number(query.limit) || 25);
+  const limit = everything ? 0 : maxLimit ? Math.min(maxLimit, wanted) : wanted;
+
   return {
     page,
     limit,
-    skip: (page - 1) * limit,
+    skip: limit ? (page - 1) * limit : 0,
     sort: String(query.sort || defaultSort).split(',').join(' '),
     select: query.fields ? String(query.fields).split(',').join(' ') : undefined,
   };
@@ -74,7 +86,9 @@ function buildOptions(query, { defaultSort = '-createdAt', maxLimit = 200 } = {}
 
 /** Runs the list and its count together, and shapes the envelope. */
 async function paginate(Model, filter, options, { populate } = {}) {
-  let q = Model.find(filter).sort(options.sort).skip(options.skip).limit(options.limit);
+  let q = Model.find(filter).sort(options.sort);
+  // limit 0 is 'all of them', and mongoose reads .limit(0) the same way.
+  if (options.limit) q = q.skip(options.skip).limit(options.limit);
   if (options.select) q = q.select(options.select);
   if (populate) q = q.populate(populate);
 
@@ -85,7 +99,7 @@ async function paginate(Model, filter, options, { populate } = {}) {
     page: options.page,
     limit: options.limit,
     total,
-    pages: Math.max(1, Math.ceil(total / options.limit)),
+    pages: options.limit ? Math.max(1, Math.ceil(total / options.limit)) : 1,
   };
 }
 
