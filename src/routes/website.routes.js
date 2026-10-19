@@ -98,6 +98,9 @@ router.get('/blogs/:slug', c.blogPost);
 /** The Grab Offers strip the desk arranges in the panel. */
 router.get('/home-offers', c.homeOffers);
 
+/** The banner carousel at the top of the home page. */
+router.get('/home-banners', c.homeBanners);
+
 router.post('/member/otp', perAddress, perPhone, c.memberOtpRequest);
 router.post('/member/verify', perAddress, c.memberOtpVerify);
 router.get('/member/me', protectMember, c.memberMe);

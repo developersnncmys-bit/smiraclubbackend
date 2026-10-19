@@ -11,6 +11,7 @@ const InventoryItem = require('../models/InventoryItem');
 const Offer = require('../models/Offer');
 const Blog = require('../models/Blog');
 const HomeOffer = require('../models/HomeOffer');
+const HomeBanner = require('../models/HomeBanner');
 const Reward = require('../models/Reward');
 const Referral = require('../models/Referral');
 const ApiError = require('../helpers/ApiError');
@@ -2132,4 +2133,37 @@ exports.homeOffers = catchAsync(async (req, res) => {
 
   const base = ourBase(req);
   res.json({ success: true, count: rows.length, data: rows.map((o) => homeOfferForWebsite(o, base)) });
+});
+
+/**
+ * One slide of the banner carousel, in the shape the website's own
+ * bundled slides already have — so the component cannot tell a desk
+ * slide from a shipped one, and needs no branch for either.
+ *
+ * The figure is sent apart from the words around it because the design
+ * draws it enormous and the words small. Joining them here would make
+ * the website take them apart again, with a rule about where to cut.
+ */
+const homeBannerForWebsite = (b, base) => ({
+  id: b.code,
+  desk: true,
+  eyebrow: b.eyebrow || '',
+  headline: b.headline || '',
+  figure: b.figure,
+  unit: b.unit || '',
+  suffix: b.suffix || '',
+  copy: b.copy || '',
+  cta: { label: b.ctaLabel || 'Book now', href: b.ctaHref || '/membership' },
+  image: ourFile(b.imageUrl, base) || '',
+  alt: b.alt || '',
+});
+
+/** The carousel, in the order the desk arranged it. Live slides only. */
+exports.homeBanners = catchAsync(async (req, res) => {
+  const rows = await HomeBanner.find({ status: 'Live' })
+    .sort('order createdAt')
+    .lean();
+
+  const base = ourBase(req);
+  res.json({ success: true, count: rows.length, data: rows.map((b) => homeBannerForWebsite(b, base)) });
 });
