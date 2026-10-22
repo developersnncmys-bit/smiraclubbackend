@@ -135,7 +135,12 @@ async function checkOtp(phone, code) {
     return { matched: false, reason: 'The code could not be checked just now — please try again' };
   }
 
-  const status = String(said.json?.status || '').toUpperCase();
+  /*
+   * Their statuses come back underscored — NOT_MATCHED — where the
+   * document writes them spaced. Read both, since either could be what
+   * a later version sends.
+   */
+  const status = String(said.json?.status || '').toUpperCase().replace(/_/g, ' ');
   if (said.json?.matched === true) return { matched: true, status };
 
   const REASON = {
