@@ -145,7 +145,15 @@ exports.verifyOtp = catchAsync(async (req, res) => {
     throw ApiError.forbidden('Too many wrong codes — ask for a new one');
   }
 
-  const ok = await bcrypt.compare(code, user.otp.codeHash);
+  /*
+   * The platform holds the code where it sends one, so it is the only
+   * thing that can say whether this is it. Our own record is still
+   * spent afterwards, so a code cannot be used twice.
+   */
+  const ok = sms.platform()
+    ? (await sms.checkOtp(user.phone, code)).matched
+    : await bcrypt.compare(code, user.otp.codeHash);
+
   if (!ok) {
     user.otp.attempts = (user.otp.attempts || 0) + 1;
     await user.save({ validateBeforeSave: false });

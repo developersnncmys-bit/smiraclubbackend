@@ -173,13 +173,21 @@ exports.requestOtp = catchAsync(async (req, res) => {
   });
 });
 
-/** Checks a code against whatever is holding it, and counts a wrong guess. */
-async function spend(holder, code, save) {
+/**
+ * Checks a code against whatever is holding it, and counts a wrong guess.
+ *
+ * Where the gateway's two-factor service sent the code, it is the thing
+ * holding it — our record is only the resend clock and the attempt count.
+ */
+async function spend(holder, code, save, phone) {
   if (!holder?.codeHash || !holder.expiresAt) throw ApiError.unauthorized('Ask for a code first');
   if (holder.expiresAt < new Date()) throw ApiError.unauthorized('That code has expired — ask for another');
   if ((holder.attempts || 0) >= OTP_ATTEMPTS) throw ApiError.forbidden('Too many wrong codes — ask for a new one');
 
-  const ok = await bcrypt.compare(code, holder.codeHash);
+  const ok = sms.platform()
+    ? (await sms.checkOtp(phone, code)).matched
+    : await bcrypt.compare(code, holder.codeHash);
+
   if (!ok) {
     holder.attempts = (holder.attempts || 0) + 1;
     await save();
@@ -203,14 +211,14 @@ exports.verifyOtp = catchAsync(async (req, res) => {
   if (registering && partner) throw ApiError.badRequest('That number is already registered — sign in instead');
 
   if (partner) {
-    await spend(partner.otp, code, () => partner.save({ validateBeforeSave: false }));
+    await spend(partner.otp, code, () => partner.save({ validateBeforeSave: false }), digits);
     partner.otp = undefined;
   } else {
     const challenge = await OtpChallenge.findOne({ phoneDigits: digits, purpose: 'partner-signup' }).select(
       '+codeHash'
     );
     if (!challenge) throw ApiError.unauthorized('That code did not work');
-    await spend(challenge, code, () => challenge.save());
+    await spend(challenge, code, () => challenge.save(), digits);
     await challenge.deleteOne();
 
     // Proved. Now — and only now — the partner exists, at the very start of
@@ -302,7 +310,7 @@ exports.register = catchAsync(async (req, res) => {
     purpose: 'partner-signup',
   }).select('+codeHash');
   if (!challenge) throw ApiError.unauthorized("Ask for a code and type it in");
-  await spend(challenge, code, () => challenge.save());
+  await spend(challenge, code, () => challenge.save(), digits);
   await challenge.deleteOne();
 
   const partner = new Partner({

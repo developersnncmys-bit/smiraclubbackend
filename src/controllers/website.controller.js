@@ -993,10 +993,18 @@ exports.memberOtpVerify = catchAsync(async (req, res) => {
   if (challenge.expiresAt < new Date()) throw ApiError.badRequest('That code has expired — ask for another');
   if (challenge.attempts >= OTP_ATTEMPTS) throw ApiError.badRequest('Too many tries — ask for another code');
 
-  if (!(await bcrypt.compare(code, challenge.codeHash))) {
+  /*
+   * The platform holds the code where it sends one, so it is the only
+   * thing that can say whether this is it.
+   */
+  const checked = sms.platform()
+    ? await sms.checkOtp(digits, code)
+    : { matched: await bcrypt.compare(code, challenge.codeHash) };
+
+  if (!checked.matched) {
     challenge.attempts += 1;
     await challenge.save();
-    throw ApiError.badRequest('That code is not right');
+    throw ApiError.badRequest(checked.reason || 'That code is not right');
   }
   await challenge.deleteOne();
 
