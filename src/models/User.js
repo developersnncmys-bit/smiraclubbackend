@@ -111,6 +111,25 @@ userSchema.pre('save', function keepDigits(next) {
   next();
 });
 
+/**
+ * Editing goes through findOneAndUpdate, which skips the hook above.
+ *
+ * So a number changed in Users & Roles was written to `phone` and never
+ * to `phoneDigits` — and `phoneDigits` is what a sign-in is matched
+ * against. The old number went on working and the new one was never
+ * recognised, which is the worst of both.
+ */
+userSchema.pre('findOneAndUpdate', function keepDigitsOnUpdate(next) {
+  const update = this.getUpdate() || {};
+  const phone = update.phone ?? update.$set?.phone;
+  if (phone !== undefined) {
+    const digits = String(phone || '').replace(/\D/g, '').slice(-10);
+    if (update.$set) update.$set.phoneDigits = digits;
+    else update.phoneDigits = digits;
+  }
+  next();
+});
+
 userSchema.pre('save', async function hashPassword(next) {
   if (!this.isModified('password')) return next();
   this.password = await bcrypt.hash(this.password, 12);
