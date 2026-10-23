@@ -39,8 +39,14 @@ const localhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
  */
 const ownDeployments = /^https:\/\/smiraclub[a-z0-9-]*\.vercel\.app$/;
 
+/** smiraclub.com and its subdomains (www, the API itself, any admin host). */
+const ownDomain = /^https:\/\/([a-z0-9-]+\.)?smiraclub\.com$/;
+
 const allowed = (origin) =>
-  (isDev && localhost.test(origin)) || origins.includes(origin) || ownDeployments.test(origin);
+  (isDev && localhost.test(origin)) ||
+  origins.includes(origin) ||
+  ownDeployments.test(origin) ||
+  ownDomain.test(origin);
 
 app.use(
   cors({
