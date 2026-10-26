@@ -982,6 +982,48 @@ exports.memberOtpRequest = catchAsync(async (req, res) => {
  * their profile and plan on the next. A number the desk has never seen signs
  * in as somebody new, with the profile still to fill in.
  */
+/** What of the plan a member's own summary needs. */
+const MEMBER_PLAN_FIELDS = 'privileges name features freeStay durationMonths persons rooms';
+
+/**
+ * A member's membership, as the website reads it — on sign-in and on every
+ * visit after. One shape in one place, so the two cannot drift apart.
+ */
+function membershipForMember(membership) {
+  if (!membership) return null;
+  const plan = membership.plan || null;
+  return {
+    plan: String(membership.planName || '').split(' ')[0],
+    planName: membership.planName,
+    reference: membership.code,
+    status: membership.activation?.stage === 'Activated' ? 'Active' : membership.activation?.stage || membership.status,
+    expiresOn: membership.expiresOn || null,
+    startedOn: membership.startedOn || membership.receivedOn || null,
+    /*
+     * Which services this member actually holds, and how many the
+     * plan allows. A booking screen checks itself against this
+     * before offering a rate the membership does not cover.
+     */
+    privileges: membership.privileges || [],
+    privilegesAllowed: plan?.privileges ?? 0,
+    gifts: membership.gifts || [],
+    /*
+     * What the plan they bought gives them, as the desk has typed it on
+     * the plan, so the profile can show a member their own benefits
+     * rather than send them back to the sales page.
+     */
+    benefits: (plan?.features || []).filter(Boolean),
+    planFacts: plan
+      ? {
+          freeStayNights: Number(plan.freeStay?.nights) || 0,
+          months: Number(plan.durationMonths) || 0,
+          persons: Number(plan.persons) || 0,
+          rooms: Number(plan.rooms) || 0,
+        }
+      : null,
+  };
+}
+
 exports.memberOtpVerify = catchAsync(async (req, res) => {
   const digits = tenDigits(req.body.phone);
   const code = String(req.body.code || '').replace(/\D/g, '');
@@ -1012,7 +1054,7 @@ exports.memberOtpVerify = catchAsync(async (req, res) => {
   const membership = customer
     ? await Membership.findOne({ customer: customer._id, status: { $ne: 'Cancelled' } })
         .sort({ receivedOn: -1 })
-        .populate('plan', 'privileges name')
+        .populate('plan', MEMBER_PLAN_FIELDS)
         .lean()
     : null;
 
@@ -1034,24 +1076,7 @@ exports.memberOtpVerify = catchAsync(async (req, res) => {
             anniversary: customer.anniversary || null,
           }
         : { name: '', email: '', phone: `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`, city: '', address: '', dob: null, anniversary: null },
-      membership: membership
-        ? {
-            plan: String(membership.planName || '').split(' ')[0],
-            planName: membership.planName,
-            reference: membership.code,
-            status: membership.activation?.stage === 'Activated' ? 'Active' : membership.activation?.stage || membership.status,
-            expiresOn: membership.expiresOn || null,
-            startedOn: membership.startedOn || membership.receivedOn || null,
-            /*
-             * Which services this member actually holds, and how many the
-             * plan allows. A booking screen checks itself against this
-             * before offering a rate the membership does not cover.
-             */
-            privileges: membership.privileges || [],
-            privilegesAllowed: membership.plan?.privileges ?? 0,
-            gifts: membership.gifts || [],
-          }
-        : null,
+      membership: membershipForMember(membership),
     },
   });
 });
@@ -1106,7 +1131,7 @@ exports.memberMe = catchAsync(async (req, res) => {
   const [membership, bookings] = await Promise.all([
     Membership.findOne({ customer: me._id, status: { $ne: 'Cancelled' } })
       .sort({ receivedOn: -1 })
-      .populate('plan', 'privileges name')
+      .populate('plan', MEMBER_PLAN_FIELDS)
       .lean(),
     Booking.find({ customer: me._id }).sort({ createdAt: -1 }).lean(),
   ]);
@@ -1115,24 +1140,7 @@ exports.memberMe = catchAsync(async (req, res) => {
     success: true,
     data: {
       member: { name: me.name, email: me.email || '', phone: me.phone, city: me.city || '' },
-      membership: membership
-        ? {
-            plan: String(membership.planName || '').split(' ')[0],
-            planName: membership.planName,
-            reference: membership.code,
-            status: membership.activation?.stage === 'Activated' ? 'Active' : membership.activation?.stage || membership.status,
-            expiresOn: membership.expiresOn || null,
-            startedOn: membership.startedOn || membership.receivedOn || null,
-            /*
-             * Which services this member actually holds, and how many the
-             * plan allows. A booking screen checks itself against this
-             * before offering a rate the membership does not cover.
-             */
-            privileges: membership.privileges || [],
-            privilegesAllowed: membership.plan?.privileges ?? 0,
-            gifts: membership.gifts || [],
-          }
-        : null,
+      membership: membershipForMember(membership),
       bookings: bookings.map(bookingForMember),
     },
   });
