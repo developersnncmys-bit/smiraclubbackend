@@ -7,7 +7,8 @@ const User = require('../models/User');
 const { scopeFilter } = require('../middleware/scope');
 const { crud } = require('../helpers/crud');
 const { record } = require('../helpers/audit');
-const { LEAD_STAGES } = require('../config/constants');
+const { LEAD_STAGES, LEAD_SOURCES } = require('../config/constants');
+const Counter = require('../models/Counter');
 
 const base = crud(Lead, {
   name: 'Lead',
@@ -19,6 +20,92 @@ const base = crud(Lead, {
 exports.list = base.list;
 exports.getOne = base.getOne;
 exports.create = base.create;
+
+/**
+ * Many leads at once, from a spreadsheet.
+ *
+ * Every row needs a name and a phone; a row without either is reported
+ * back, not guessed at. A number already in Sales & Leads, or seen earlier
+ * in the same file, is skipped, so importing the same sheet twice adds
+ * nothing the second time. Codes are reserved as one block, because
+ * minting them one by one is too slow for a sheet of a thousand.
+ */
+const IMPORT_LIMIT = 5000;
+const tenDigits = (v) => String(v || '').replace(/\D/g, '').slice(-10);
+const prettyPhone = (v) => {
+  const d = String(v || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '').replace(/^0(?=\d{10}$)/, '');
+  return /^[6-9]\d{9}$/.test(d) ? `+91 ${d.slice(0, 5)} ${d.slice(5)}` : String(v).trim();
+};
+const text = (v, max = 300) => (v === undefined || v === null ? '' : String(v).trim().slice(0, max));
+
+exports.importLeads = catchAsync(async (req, res) => {
+  const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+  if (!rows.length) throw ApiError.badRequest('There are no rows to import');
+  if (rows.length > IMPORT_LIMIT) throw ApiError.badRequest(`Import at most ${IMPORT_LIMIT} rows at a time`);
+
+  const existing = await Lead.find({}, { phone: 1 }).lean();
+  const seen = new Set(existing.map((l) => tenDigits(l.phone)).filter(Boolean));
+
+  const skipped = [];
+  const docs = [];
+  rows.forEach((r, i) => {
+    const row = i + 2; // the sheet's own row number, under its header
+    const name = text(r.name, 120);
+    const phone = text(r.phone, 40);
+    if (!name || !phone) {
+      skipped.push({ row, name, reason: !name ? 'No name' : 'No phone' });
+      return;
+    }
+    const key = tenDigits(phone);
+    if (key && seen.has(key)) {
+      skipped.push({ row, name, reason: 'Phone already in Sales & Leads' });
+      return;
+    }
+    if (key) seen.add(key);
+
+    const when = r.travelDate ? new Date(r.travelDate) : null;
+    docs.push({
+      name,
+      phone: prettyPhone(phone),
+      ...(text(r.email) ? { email: text(r.email, 160).toLowerCase() } : {}),
+      ...(text(r.destination) ? { destination: text(r.destination, 120) } : {}),
+      ...(Number(r.pax) > 0 ? { pax: Number(r.pax) } : {}),
+      ...(Number(r.budget) > 0 ? { budget: Number(r.budget) } : {}),
+      ...(when && !Number.isNaN(when.getTime()) ? { travelDate: when } : {}),
+      source: LEAD_SOURCES.includes(r.source) ? r.source : 'Calling data',
+      status: LEAD_STAGES.includes(r.status) ? r.status : 'New',
+      ...(text(r.campaign) ? { campaign: text(r.campaign, 80) } : {}),
+      ...(text(r.label) ? { label: text(r.label, 60) } : {}),
+      ...(text(r.notes) ? { notes: text(r.notes, 4000) } : {}),
+      tags: [...new Set(['Imported', ...(Array.isArray(r.tags) ? r.tags.map((t) => text(t, 40)).filter(Boolean) : [])])],
+      createdBy: req.user?._id,
+    });
+  });
+
+  let added = [];
+  if (docs.length) {
+    // One block of codes for the lot: LEAD-3079 … LEAD-3200.
+    const counter = await Counter.findOneAndUpdate(
+      { _id: 'LEAD' },
+      { $inc: { seq: docs.length }, $setOnInsert: { start: 2000 } },
+      { new: true, upsert: true }
+    );
+    const first = (counter.seq || 0) - docs.length + 1 + (counter.start || 2000);
+    docs.forEach((d, i) => { d.code = `LEAD-${String(first + i).padStart(4, '0')}`; });
+    added = await Lead.insertMany(docs, { ordered: false });
+    await record(req, 'create', 'Lead', added.map((l) => l._id).join(','), `Imported ${added.length} lead(s)`);
+  }
+
+  res.status(201).json({
+    success: true,
+    data: {
+      added: added.length,
+      first: added[0]?.code || null,
+      last: added[added.length - 1]?.code || null,
+      skipped,
+    },
+  });
+});
 exports.update = base.update;
 exports.remove = base.remove;
 
