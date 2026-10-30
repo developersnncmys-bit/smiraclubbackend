@@ -363,19 +363,34 @@ exports.register = catchAsync(async (req, res) => {
 });
 
 /**
- * Sign in with an email and a password.
+ * Signing in with a password, against the partner's mobile number or email.
  *
- * Wrong email and wrong password give the same answer, so the form
- * cannot be used to find out which emails are registered.
+ * It took only an email, while a partner is known by the number the desk
+ * rings — so it reads whichever was typed: anything with an @ is an email,
+ * anything else is matched on the number's ten digits. Older clients still
+ * send { email }, and that still works.
+ *
+ * A wrong number and a wrong password give the same answer. An account with
+ * no password yet is told so, and how to get one: that says no more than
+ * the mobile-code step already does, which names the partner a number
+ * belongs to.
  */
 exports.login = catchAsync(async (req, res) => {
-  const email = clean(req.body?.email, 160).toLowerCase();
+  const id = clean(req.body?.login || req.body?.email || req.body?.phone, 160);
   const password = String(req.body?.password || "");
-  if (!email || !password) throw ApiError.badRequest("Email and password, please");
+  if (!id || !password) throw ApiError.badRequest("Your mobile number or email, and your password, please");
 
-  const partner = await Partner.findOne({ email }).select('+passwordHash');
+  const byEmail = id.includes('@');
+  const digits = byEmail ? '' : Partner.digits(id);
+  if (!byEmail && digits.length !== 10) throw ApiError.badRequest("Enter a 10-digit mobile number or your email");
+
+  const partner = await Partner.findOne(byEmail ? { email: id.toLowerCase() } : { phoneDigits: digits }).select('+passwordHash');
+  if (partner && !partner.passwordHash) {
+    // Known, but has only ever used the mobile code: say how to get a password.
+    throw ApiError.unauthorized("No password is set on this account yet — sign in with the mobile code, then set one under Profile");
+  }
   const ok = partner?.passwordHash && (await bcrypt.compare(password, partner.passwordHash));
-  if (!ok) throw ApiError.unauthorized("That email and password do not match");
+  if (!ok) throw ApiError.unauthorized(`That ${byEmail ? 'email' : 'mobile number'} and password do not match`);
 
   partner.lastLoginAt = new Date();
   await partner.save({ validateBeforeSave: false });
