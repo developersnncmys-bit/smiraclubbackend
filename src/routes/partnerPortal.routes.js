@@ -70,6 +70,7 @@ router.patch('/accepting', c.setAccepting);
 router.get('/performance', c.performance);
 router.get('/availability', c.availability);
 router.patch('/availability', c.setAvailability);
+router.patch('/availability/day', c.setDay);
 
 // A short discount on their own listing, raised and stopped by them.
 router.get('/flash-offers', c.flashOffers);

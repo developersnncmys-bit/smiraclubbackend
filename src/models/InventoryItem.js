@@ -120,7 +120,9 @@ const inventorySchema = new mongoose.Schema(
     availability: [
       { date: Date, left: Number, rate: Number, note: String, _id: false },
     ],
-    blackouts: [{ from: Date, to: Date, reason: String, _id: false }],
+    // `by`: 'partner' when the partner closed the day from their portal (they
+    // may reopen it); anything else is the desk's (only the desk may).
+    blackouts: [{ from: Date, to: Date, reason: String, by: String, _id: false }],
 
     /**
      * How often the website opened this listing.

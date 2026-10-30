@@ -816,25 +816,56 @@ exports.availability = catchAsync(async (req, res) => {
      * "from".
      */
     const rates = [];
+    let units = 0;
+    let blackCount = 0;
+    let blackByDesk = false;
+    let blackReason = '';
     items.forEach((item) => {
       const override = (item.availability || []).find((a) => dayKey(a.date) === on);
-      const blackout = (item.blackouts || []).some((b) => on >= dayKey(b.from) && on <= dayKey(b.to || b.from));
-      if (blackout) { blacked = true; return; }
+      const blackout = (item.blackouts || []).find((b) => on >= dayKey(b.from) && on <= dayKey(b.to || b.from));
+      if (blackout) {
+        blacked = true;
+        blackCount += 1;
+        if (blackout.by !== 'partner') blackByDesk = true;
+        blackReason = blackReason || blackout.reason || '';
+        return;
+      }
+      units += Number(item.units || 0);
       open += override ? Number(override.left || 0) : Math.max(0, (item.units || 0) - (item.booked || 0) - (item.blocked || 0));
       const rate = override && override.rate != null ? Number(override.rate) : Number(item.baseRate || 0);
       if (rate > 0) rates.push(rate);
     });
 
     const staying = bookings.filter((b) => b.checkIn && on >= dayKey(b.checkIn) && (!b.checkOut || on < dayKey(b.checkOut)));
+    const booked = staying.reduce((s, b) => s + (b.rooms || 1), 0);
+
+    /*
+     * One word for the day, so the calendar can colour it:
+     *   black   — closed to Smira bookings (every property blacked out)
+     *   booked  — every room taken by bookings
+     *   blocked — no rooms open, and not because of bookings: stopped by the partner
+     *   partial — some rooms booked, some still open
+     *   open    — available
+     */
+    let status = 'open';
+    if (items.length && blackCount === items.length) status = 'black';
+    else if (units > 0 && booked >= units) status = 'booked';
+    else if (units > 0 && open <= 0) status = 'blocked';
+    else if (booked > 0) status = 'partial';
 
     return {
       date,
       open,
+      units,
+      status,
       blackout: blacked,
+      // A black day the desk set is theirs to lift; one the partner set is the partner's.
+      blackoutBy: blacked ? (blackByDesk ? 'desk' : 'partner') : null,
+      blackoutReason: blackReason,
       rate: rates.length ? Math.min(...rates) : null,
       // Only worth saying "from" when the rooms are not all one price.
       rateFrom: rates.length > 1 && Math.min(...rates) !== Math.max(...rates),
-      staying: staying.reduce((s, b) => s + (b.rooms || 1), 0),
+      staying: booked,
       guests: staying.map((b) => b.customerName).filter(Boolean),
     };
   });
@@ -889,6 +920,70 @@ exports.setAvailability = catchAsync(async (req, res) => {
     message: 'Availability saved',
     data: { date: on, left: rooms, rate: priced },
   });
+});
+
+/**
+ * A whole day, all of a partner's properties at once, in one tap:
+ *
+ *   block   — stop sales that day (every room type to 0 rooms open)
+ *   unblock — open it again at the usual room count
+ *   black   — a black day: closed to Smira bookings, with a reason
+ *   unblack — lift a black day the partner set; one the desk set stays
+ *
+ * Doing these one room type at a time through the rooms box was possible but
+ * slow, and a black day could only be set by the desk. The website already
+ * refuses a booking on a blocked or a black day, so this takes effect there
+ * at once.
+ */
+const istDay = (d) => new Date(d).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+exports.setDay = catchAsync(async (req, res) => {
+  mustBeLive(req.partner);
+  const { date, action } = req.body || {};
+  const reason = clean(req.body?.reason, 120);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) throw ApiError.badRequest('Which day? (YYYY-MM-DD)');
+  if (!['block', 'unblock', 'black', 'unblack'].includes(action)) throw ApiError.badRequest('block, unblock, black or unblack');
+
+  // Midday in India, so the day cannot slide either side of midnight in any timezone.
+  const day = new Date(`${date}T12:00:00+05:30`);
+  const items = await InventoryItem.find({ partner: req.partner._id });
+  if (!items.length) throw ApiError.badRequest('There are no rooms listed against you yet');
+
+  for (const item of items) {
+    const override = (item.availability || []).find((a) => istDay(a.date) === date);
+    const usual = Math.max(0, (item.units || 0) - (item.booked || 0) - (item.blocked || 0));
+
+    if (action === 'block') {
+      if (override) override.left = 0;
+      else item.availability.push({ date: day, left: 0, rate: null });
+    } else if (action === 'unblock') {
+      if (override) {
+        // Keep a special rate if one was set; otherwise the day is plain again.
+        if (override.rate != null) override.left = usual;
+        else item.availability = item.availability.filter((a) => a !== override);
+      }
+    } else if (action === 'black') {
+      const covered = (item.blackouts || []).some((b) => date >= istDay(b.from) && date <= istDay(b.to || b.from));
+      if (!covered) item.blackouts.push({ from: day, to: day, reason: reason || 'Black day', by: 'partner' });
+    } else if (action === 'unblack') {
+      const desk = (item.blackouts || []).some(
+        (b) => b.by !== 'partner' && date >= istDay(b.from) && date <= istDay(b.to || b.from)
+      );
+      if (desk) throw ApiError.badRequest('The Smira desk closed this day — call them to open it');
+      item.blackouts = (item.blackouts || []).filter(
+        (b) => !(b.by === 'partner' && istDay(b.from) === date && istDay(b.to || b.from) === date)
+      );
+    }
+    item.markModified('availability');
+    item.markModified('blackouts');
+    await item.save();
+  }
+
+  const said = {
+    block: 'Day blocked — no new bookings', unblock: 'Day open again',
+    black: 'Marked as a black day', unblack: 'Black day removed',
+  }[action];
+  res.json({ success: true, message: said, data: { date, action } });
 });
 
 /* -- Flash offers -------------------------------------------------------- */
