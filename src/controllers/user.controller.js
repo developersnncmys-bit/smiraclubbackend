@@ -4,6 +4,7 @@ const Booking = require('../models/Booking');
 const Membership = require('../models/Membership');
 const Ticket = require('../models/Ticket');
 const Task = require('../models/Task');
+const Role = require('../models/Role');
 const AuditLog = require('../models/AuditLog');
 const ApiError = require('../helpers/ApiError');
 const catchAsync = require('../helpers/catchAsync');
@@ -30,7 +31,48 @@ const base = crud(User, {
 
 exports.list = base.list;
 exports.create = base.create;
-exports.remove = base.remove;
+/**
+ * Deleting a user, with the three things that must not happen checked first.
+ *
+ * Nobody deletes their own account from under themselves; the last owner
+ * (a super-admin role) is never deleted, or nobody could run the panel; and
+ * the leads and tasks they held are handed back as unassigned rather than
+ * left pointing at somebody who no longer exists — so they show up as
+ * waiting for an owner instead of quietly belonging to nobody.
+ */
+
+exports.remove = catchAsync(async (req, res) => {
+  const user = await User.findById(req.params.id).populate('role', 'name superAdmin');
+  if (!user) throw ApiError.notFound('User not found');
+  if (req.user && String(req.user._id) === String(user._id)) {
+    throw ApiError.badRequest('You cannot delete your own account');
+  }
+  if (user.role?.superAdmin) {
+    const ownerRoles = await Role.find({ superAdmin: true }).select('_id').lean();
+    const others = await User.countDocuments({
+      _id: { $ne: user._id },
+      role: { $in: ownerRoles.map((r) => r._id) },
+      status: 'Active',
+    });
+    if (!others) throw ApiError.conflict(`${user.name} is the only owner — make someone else an owner first`);
+  }
+
+  const [leads, tasks] = await Promise.all([
+    Lead.updateMany({ owner: user._id }, { $unset: { owner: 1 } }),
+    Task.updateMany({ owner: user._id, status: { $nin: ['Completed', 'Cancelled'] } }, { $unset: { owner: 1 } }),
+  ]);
+  await User.deleteOne({ _id: user._id });
+  await record(
+    req, 'delete', 'User', user._id,
+    `Deleted ${user.name}${leads.modifiedCount ? ` · ${leads.modifiedCount} lead(s) unassigned` : ''}`
+  );
+
+  res.json({
+    success: true,
+    message: `${user.name} deleted`,
+    data: { id: req.params.id, leadsUnassigned: leads.modifiedCount, tasksUnassigned: tasks.modifiedCount },
+  });
+});
 
 exports.getOne = catchAsync(async (req, res) => {
   const user = await User.findById(req.params.id)
