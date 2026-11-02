@@ -6,6 +6,7 @@ const sms = require('../helpers/sms');
 const ApiError = require('../helpers/ApiError');
 const catchAsync = require('../helpers/catchAsync');
 const { record } = require('../helpers/audit');
+const { noteLogin } = require('./attendance.controller');
 
 const sign = (user) =>
   jwt.sign({ sub: user._id, role: user.role?.name }, process.env.JWT_SECRET, {
@@ -71,6 +72,7 @@ exports.login = catchAsync(async (req, res) => {
   await user.save({ validateBeforeSave: false });
 
   await record({ ...req, user }, 'login', 'User', user._id, `${user.name} signed in`);
+  await noteLogin(user._id, 'in');
 
   res.json({ success: true, token: sign(user), data: shape(user) });
 });
@@ -172,6 +174,7 @@ exports.verifyOtp = catchAsync(async (req, res) => {
   await user.save({ validateBeforeSave: false });
 
   await record({ ...req, user }, 'login', 'User', user._id, `${user.name} signed in by OTP`);
+  await noteLogin(user._id, 'in');
 
   res.json({ success: true, token: sign(user), data: shape(user) });
 });
@@ -185,6 +188,7 @@ exports.logout = catchAsync(async (req, res) => {
   req.user.lastLogoutAt = new Date();
   await req.user.save({ validateBeforeSave: false });
   await record(req, 'logout', 'User', req.user._id, `${req.user.name} signed out`);
+  await noteLogin(req.user._id, 'out');
   res.json({ success: true, message: 'Signed out' });
 });
 

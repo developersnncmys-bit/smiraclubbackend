@@ -29,6 +29,19 @@ const attendanceSchema = new mongoose.Schema(
     date: { type: String, required: true, index: true },
     checkIn: stampSchema,
     checkOut: stampSchema,
+    // The day's standing. Set by check-in, and changeable by a manager.
+    status: {
+      type: String,
+      enum: ['Present', 'Late', 'Half day', 'Field visit', 'Work from home', 'Leave', 'Absent'],
+    },
+    // When they first signed in to the panel that day, and last signed out.
+    firstLoginAt: Date,
+    lastLogoutAt: Date,
+    // A manager's correction, and why — so a changed day is never silent.
+    editedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    editedByName: String,
+    editedAt: Date,
+    editReason: { type: String, trim: true, maxlength: 300 },
   },
   { timestamps: true }
 );
