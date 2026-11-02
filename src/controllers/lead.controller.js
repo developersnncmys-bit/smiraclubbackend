@@ -294,3 +294,45 @@ exports.today = catchAsync(async (req, res) => {
     },
   });
 });
+
+/**
+ * One change to many leads, in one request: a stage, a source, a follow-up,
+ * an owner, or a folder to file them in or take them out of.
+ *
+ * The panel used to send one request per lead, which was fine for ten and
+ * hung the browser for ten thousand. Only the fields a bulk action sets are
+ * accepted, so this cannot be used to overwrite a lead's name or phone.
+ */
+const BULK_FIELDS = ['status', 'source', 'priority', 'label', 'campaign', 'lostReason', 'nextFollowUpAt', 'lastContactAt', 'owner'];
+
+exports.bulkUpdate = catchAsync(async (req, res) => {
+  const { ids = [], set = {}, addTag, removeTag } = req.body || {};
+  if (!Array.isArray(ids) || !ids.length) throw ApiError.badRequest('Pick at least one lead');
+
+  const fields = {};
+  BULK_FIELDS.forEach((k) => {
+    if (set[k] !== undefined) fields[k] = set[k];
+  });
+  if (fields.status && !LEAD_STAGES.includes(fields.status)) throw ApiError.badRequest('That stage does not exist');
+  if (fields.source && !LEAD_SOURCES.includes(fields.source)) throw ApiError.badRequest('That source does not exist');
+  if (fields.owner && !(await User.exists({ _id: fields.owner }))) throw ApiError.badRequest('That team member does not exist');
+  if (!Object.keys(fields).length && !addTag && !removeTag) throw ApiError.badRequest('Nothing to change');
+
+  const where = { _id: { $in: ids }, ...scopeFilter(req, 'owner') };
+  let changed = 0;
+  // A tag cannot be pulled and added in the same update, so a move is two.
+  if (removeTag) {
+    const r = await Lead.updateMany(where, { $pull: { tags: text(removeTag, 40) } });
+    changed = Math.max(changed, r.modifiedCount);
+  }
+  if (Object.keys(fields).length || addTag) {
+    const r = await Lead.updateMany(where, {
+      ...(Object.keys(fields).length ? { $set: { ...fields, updatedBy: req.user?._id } } : {}),
+      ...(addTag ? { $addToSet: { tags: text(addTag, 40) } } : {}),
+    });
+    changed = Math.max(changed, r.modifiedCount);
+  }
+
+  await record(req, 'update', 'Lead', `${ids.length} lead(s)`, `Bulk change on ${changed} lead(s)`);
+  res.json({ success: true, data: { changed } });
+});

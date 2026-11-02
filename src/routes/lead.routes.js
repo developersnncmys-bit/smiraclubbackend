@@ -11,6 +11,7 @@ router.get('/by-source', can('CRM', 'view'), c.bySource);
 router.get('/today', can('CRM', 'view'), c.today);
 router.post('/assign', can('CRM', 'assign'), c.assign);
 router.post('/import', can('CRM', 'create'), c.importLeads);
+router.post('/bulk', can('CRM', 'edit'), c.bulkUpdate);
 
 router
   .route('/')
