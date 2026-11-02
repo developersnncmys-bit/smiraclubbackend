@@ -6,6 +6,7 @@ const router = require('express').Router();
  */
 router.use('/auth', require('./auth.routes'));
 router.use('/users', require('./user.routes'));
+router.use('/attendance', require('./attendance.routes'));
 router.use('/roles', require('./role.routes'));
 
 router.use('/leads', require('./lead.routes'));
@@ -56,7 +57,7 @@ router.get('/', (req, res) => {
     success: true,
     service: 'Smira Club API',
     modules: [
-      'auth', 'users', 'roles', 'leads', 'tasks', 'customers',
+      'auth', 'users', 'attendance', 'roles', 'leads', 'tasks', 'customers',
       'membership-plans', 'memberships', 'bookings', 'tickets', 'partners',
       'inventory', 'payments', 'invoices', 'refunds', 'expenses', 'approvals',
       'whatsapp', 'automations', 'rewards', 'referrals', 'offers', 'blogs', 'home-offers', 'home-banners',

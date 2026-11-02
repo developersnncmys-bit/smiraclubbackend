@@ -1,6 +1,7 @@
 /** Every model in one place, so a controller or a script imports once. */
 module.exports = {
   Approval: require('./Approval'),
+  Attendance: require('./Attendance'),
   AuditLog: require('./AuditLog'),
   AutomationRule: require('./AutomationRule'),
   BotFlow: require('./BotFlow'),
