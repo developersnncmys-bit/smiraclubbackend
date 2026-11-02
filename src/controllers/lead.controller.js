@@ -30,7 +30,6 @@ exports.create = base.create;
  * nothing the second time. Codes are reserved as one block, because
  * minting them one by one is too slow for a sheet of a thousand.
  */
-const IMPORT_LIMIT = 5000;
 const tenDigits = (v) => String(v || '').replace(/\D/g, '').slice(-10);
 const prettyPhone = (v) => {
   const d = String(v || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '').replace(/^0(?=\d{10}$)/, '');
@@ -41,7 +40,6 @@ const text = (v, max = 300) => (v === undefined || v === null ? '' : String(v).t
 exports.importLeads = catchAsync(async (req, res) => {
   const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
   if (!rows.length) throw ApiError.badRequest('There are no rows to import');
-  if (rows.length > IMPORT_LIMIT) throw ApiError.badRequest(`Import at most ${IMPORT_LIMIT} rows at a time`);
 
   const existing = await Lead.find({}, { phone: 1 }).lean();
   const seen = new Set(existing.map((l) => tenDigits(l.phone)).filter(Boolean));

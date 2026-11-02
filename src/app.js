@@ -14,7 +14,9 @@ const app = express();
 app.set('trust proxy', 1);
 app.use(helmet());
 app.use(compression());
-// Large enough for a lead import's part of a thousand rows with long notes.
+// A lead import can carry a whole spreadsheet — tens of thousands of rows —
+// so its route gets its own, much larger allowance, parsed before the rest.
+app.use('/api/leads/import', express.json({ limit: '100mb' }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
