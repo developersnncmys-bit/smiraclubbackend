@@ -336,3 +336,14 @@ exports.bulkUpdate = catchAsync(async (req, res) => {
   await record(req, 'update', 'Lead', `${ids.length} lead(s)`, `Bulk change on ${changed} lead(s)`);
   res.json({ success: true, data: { changed } });
 });
+
+/** Many leads deleted in one request — for clearing out a bad import. */
+exports.bulkDelete = catchAsync(async (req, res) => {
+  const { ids = [] } = req.body || {};
+  if (!Array.isArray(ids) || !ids.length) throw ApiError.badRequest('Pick at least one lead');
+  const result = await Lead.deleteMany({ _id: { $in: ids }, ...scopeFilter(req, 'owner') });
+  // Their open tasks would point at nothing.
+  await Task.updateMany({ lead: { $in: ids } }, { $unset: { lead: 1 } }).catch(() => {});
+  await record(req, 'delete', 'Lead', `${ids.length} lead(s)`, `Bulk deleted ${result.deletedCount} lead(s)`);
+  res.json({ success: true, data: { deleted: result.deletedCount } });
+});
