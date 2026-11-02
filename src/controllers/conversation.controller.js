@@ -3,6 +3,7 @@ const Lead = require('../models/Lead');
 const Task = require('../models/Task');
 const ApiError = require('../helpers/ApiError');
 const catchAsync = require('../helpers/catchAsync');
+const wa = require('../helpers/openwa');
 const { crud } = require('../helpers/crud');
 const { record } = require('../helpers/audit');
 
@@ -36,7 +37,22 @@ exports.reply = catchAsync(async (req, res) => {
     { new: true }
   );
   if (!conversation) throw ApiError.notFound('Conversation not found');
-  res.json({ success: true, data: conversation });
+
+  // Out through the linked number, when there is one; the reply is kept either way.
+  let delivered = false;
+  try {
+    const session = await wa.findSession();
+    if (session?.status === 'ready' && conversation.phone) {
+      await wa.call(`/sessions/${session.id}/messages/send-text`, {
+        method: 'POST',
+        body: { chatId: wa.chatIdFor(conversation.phone), text: String(text).slice(0, 4096) },
+      });
+      delivered = true;
+    }
+  } catch {
+    /* not linked, or the gateway is down — the reply stays in the inbox */
+  }
+  res.json({ success: true, data: conversation, delivered });
 });
 
 /** A message coming the other way — from the customer or the bot. */

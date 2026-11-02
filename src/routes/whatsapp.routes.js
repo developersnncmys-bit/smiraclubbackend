@@ -4,8 +4,17 @@ const { validate } = require('../middleware/validate');
 const conversations = require('../controllers/conversation.controller');
 const flows = require('../controllers/botFlow.controller');
 const campaigns = require('../controllers/campaign.controller');
+const gateway = require('../controllers/whatsappGateway.controller');
 
 router.use(protect);
+
+// -- The desk's number, linked by QR through OpenWA ------------------------
+router.get('/gateway', can('WhatsApp', 'view'), gateway.status);
+router.post('/gateway/connect', can('WhatsApp', 'edit'), gateway.connect);
+router.get('/gateway/qr', can('WhatsApp', 'edit'), gateway.qr);
+router.post('/gateway/disconnect', can('WhatsApp', 'edit'), gateway.disconnect);
+router.post('/gateway/send', can('WhatsApp', 'create'), gateway.send);
+router.post('/gateway/send-many', can('WhatsApp', 'create'), gateway.sendMany);
 
 // -- The inbox --------------------------------------------------------------
 router.get('/overview', can('WhatsApp', 'view'), conversations.overview);
