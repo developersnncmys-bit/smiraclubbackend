@@ -14,7 +14,8 @@ const app = express();
 app.set('trust proxy', 1);
 app.use(helmet());
 app.use(compression());
-app.use(express.json({ limit: '2mb' }));
+// Large enough for a lead import's part of a thousand rows with long notes.
+app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 const origins = (process.env.CORS_ORIGIN || '')
