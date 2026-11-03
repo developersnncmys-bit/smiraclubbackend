@@ -8,6 +8,7 @@ router.use(protect);
 router.get('/me', c.mine);
 router.post('/check-in', c.checkIn);
 router.post('/check-out', c.checkOut);
+router.get('/month', c.month);
 router.get('/', c.day);
 // Correcting somebody's day is a manager's job.
 router.patch('/:userId/:date', can('Users', 'edit'), c.edit);

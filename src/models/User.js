@@ -28,6 +28,8 @@ const userSchema = new mongoose.Schema(
     // -- Where they sit --------------------------------------------------
     role: { type: mongoose.Schema.Types.ObjectId, ref: 'Role', required: true },
     designation: String,
+    /** Where they work, set in Add user: check-in offers only this. Empty = any. */
+    workMode: { type: String, enum: ['Office', 'Work from home', 'Field', null] },
     department: { type: String, trim: true },
     branch: { type: String, trim: true },
     manager: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

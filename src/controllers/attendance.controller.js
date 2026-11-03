@@ -33,7 +33,7 @@ function stampFrom(req, { mode: fixedMode, needsPlace = true } = {}) {
 /** My day so far. */
 exports.mine = catchAsync(async (req, res) => {
   const row = await Attendance.findOne({ user: req.user._id, date: todayIst() }).lean();
-  res.json({ success: true, data: row });
+  res.json({ success: true, data: row, workMode: req.user.workMode || null });
 });
 
 exports.checkIn = catchAsync(async (req, res) => {
@@ -42,6 +42,10 @@ exports.checkIn = catchAsync(async (req, res) => {
   if (existing?.checkIn) throw ApiError.conflict('You have already checked in today');
 
   const stamp = stampFrom(req);
+  // Somebody set to one way of working checks in that way only.
+  if (req.user.workMode && stamp.mode !== req.user.workMode) {
+    throw ApiError.badRequest(`You are set to check in as ${req.user.workMode === 'Field' ? 'Field work' : req.user.workMode} — ask your manager to change it in Users`);
+  }
   const row = await Attendance.findOneAndUpdate(
     { user: req.user._id, date },
     { $set: { checkIn: stamp, status: ATTENDANCE_LABEL[stamp.mode] } },
@@ -131,4 +135,19 @@ exports.day = catchAsync(async (req, res) => {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(req.query.date || '') ? req.query.date : todayIst();
   const rows = await Attendance.find({ date }).lean();
   res.json({ success: true, date, rows });
+});
+
+/**
+ * One person's month, for the attendance calendar.
+ * ?month=YYYY-MM (this month if not given), ?user=<id> (me if not given).
+ */
+exports.month = catchAsync(async (req, res) => {
+  const month = /^\d{4}-\d{2}$/.test(req.query.month || '') ? req.query.month : todayIst().slice(0, 7);
+  const user = req.query.user || req.user._id;
+  if (!require('mongoose').isValidObjectId(user)) throw ApiError.badRequest('That user does not exist');
+  const rows = await Attendance.find({ user, date: { $regex: `^${month}-` } })
+    .select('date status checkIn.at checkIn.mode checkOut.at firstLoginAt editedByName editReason')
+    .sort('date')
+    .lean();
+  res.json({ success: true, month, today: todayIst(), rows });
 });
