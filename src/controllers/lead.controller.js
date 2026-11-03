@@ -7,7 +7,9 @@ const User = require('../models/User');
 const { scopeFilter } = require('../middleware/scope');
 const { crud } = require('../helpers/crud');
 const { record } = require('../helpers/audit');
-const { LEAD_STAGES, LEAD_SOURCES } = require('../config/constants');
+const { LEAD_SOURCES } = require('../config/constants');
+const Setting = require('../models/Setting');
+const stagesCfg = require('../helpers/leadStages');
 const Counter = require('../models/Counter');
 
 const base = crud(Lead, {
@@ -45,6 +47,7 @@ exports.importLeads = catchAsync(async (req, res) => {
   const seen = new Set(existing.map((l) => tenDigits(l.phone)).filter(Boolean));
 
   const skipped = [];
+  const LEAD_STAGES = await stagesCfg.leadStages();
   const docs = [];
   rows.forEach((r, i) => {
     const row = i + 2; // the sheet's own row number, under its header
@@ -110,6 +113,7 @@ exports.remove = base.remove;
 /** Moving a lead along, with the reason if it is being lost. */
 exports.moveStage = catchAsync(async (req, res) => {
   const { status, lostReason, note } = req.body;
+  const LEAD_STAGES = await stagesCfg.leadStages();
   if (!LEAD_STAGES.includes(status)) throw ApiError.badRequest(`status has to be one of: ${LEAD_STAGES.join(', ')}`);
   if (status === 'Lost' && !lostReason) throw ApiError.badRequest('A lost lead needs a reason');
 
@@ -218,6 +222,7 @@ exports.funnel = catchAsync(async (req, res) => {
   const at = (stage) => rows.find((r) => r._id === stage) || { count: 0, value: 0, avgAgeDays: 0 };
   const total = rows.reduce((s, r) => s + r.count, 0);
 
+  const LEAD_STAGES = await stagesCfg.leadStages();
   const funnel = LEAD_STAGES.filter((s) => s !== 'Lost').map((stage, i, all) => {
     const here = at(stage);
     const before = i === 0 ? null : at(all[i - 1]).count;
@@ -313,7 +318,7 @@ exports.bulkUpdate = catchAsync(async (req, res) => {
   BULK_FIELDS.forEach((k) => {
     if (set[k] !== undefined) fields[k] = set[k];
   });
-  if (fields.status && !LEAD_STAGES.includes(fields.status)) throw ApiError.badRequest('That stage does not exist');
+  if (fields.status && !(await stagesCfg.leadStages()).includes(fields.status)) throw ApiError.badRequest('That stage does not exist');
   if (fields.source && !LEAD_SOURCES.includes(fields.source)) throw ApiError.badRequest('That source does not exist');
   if (fields.owner && !(await User.exists({ _id: fields.owner }))) throw ApiError.badRequest('That team member does not exist');
   if (!Object.keys(fields).length && !addTag && !removeTag) throw ApiError.badRequest('Nothing to change');
@@ -346,4 +351,48 @@ exports.bulkDelete = catchAsync(async (req, res) => {
   await Task.updateMany({ lead: { $in: ids } }, { $unset: { lead: 1 } }).catch(() => {});
   await record(req, 'delete', 'Lead', `${ids.length} lead(s)`, `Bulk deleted ${result.deletedCount} lead(s)`);
   res.json({ success: true, data: { deleted: result.deletedCount } });
+});
+
+/** The stage list, in order. */
+exports.stages = catchAsync(async (req, res) => {
+  res.json({ success: true, data: await stagesCfg.leadStages() });
+});
+
+/**
+ * Save the stage list from Move stage → Customize.
+ *
+ * `renames` carries the stages whose name changed, so their leads move with
+ * them. A stage taken out of the list while leads still sit in it is
+ * refused, rather than leaving those leads in a stage nobody can pick.
+ */
+exports.saveStages = catchAsync(async (req, res) => {
+  const { stages, renames = [] } = req.body || {};
+  const next = stagesCfg.withFixed(stages);
+  if (next.length < 3) throw ApiError.badRequest('Add at least one stage');
+
+  const moves = (Array.isArray(renames) ? renames : [])
+    .map((r) => ({ from: text(r?.from, 40), to: text(r?.to, 40) }))
+    .filter((r) => r.from && r.to && r.from !== r.to && !stagesCfg.FIXED.includes(r.from) && next.includes(r.to));
+
+  const before = await stagesCfg.leadStages();
+  const renamed = new Set(moves.map((m) => m.from));
+  const dropped = before.filter((s) => !next.includes(s) && !renamed.has(s));
+  for (const s of dropped) {
+    const n = await Lead.countDocuments({ status: s });
+    if (n) throw ApiError.badRequest(`"${s}" still has ${n} lead(s) — move them to another stage before removing it`);
+  }
+
+  let moved = 0;
+  for (const m of moves) {
+    const r = await Lead.updateMany({ status: m.from }, { $set: { status: m.to } });
+    moved += r.modifiedCount;
+  }
+
+  await Setting.findOneAndUpdate(
+    { key: stagesCfg.KEY },
+    { value: next, updatedBy: req.user?._id },
+    { upsert: true, setDefaultsOnInsert: true },
+  );
+  await record(req, 'update', 'Setting', null, `Lead stages: ${next.join(' → ')}`);
+  res.json({ success: true, data: next, moved });
 });

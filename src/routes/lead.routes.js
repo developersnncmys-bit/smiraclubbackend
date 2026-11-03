@@ -5,6 +5,8 @@ const c = require('../controllers/lead.controller');
 
 router.use(protect);
 
+router.get('/stages', c.stages);
+router.put('/stages', can('Settings', 'edit'), c.saveStages);
 router.get('/funnel', can('CRM', 'view'), c.funnel);
 router.get('/lost-analysis', can('CRM', 'view'), c.lostAnalysis);
 router.get('/by-source', can('CRM', 'view'), c.bySource);

@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { LEAD_STAGES, LEAD_SOURCES, LEAD_SCORES } = require('../config/constants');
+const { LEAD_SOURCES, LEAD_SCORES } = require('../config/constants');
 const { withCode } = require('../helpers/ids');
 
 /** One line on the lead's history — every call, message and stage change. */
@@ -74,7 +74,7 @@ const leadSchema = new mongoose.Schema(
       note: { type: String, trim: true, maxlength: 1000 },
     },
 
-    status: { type: String, enum: LEAD_STAGES, default: 'New', index: true },
+    status: { type: String, trim: true, maxlength: 40, default: 'New', index: true },
     /** The campaign that brought it in, by name — for leads and sales by campaign. */
     campaign: { type: String, trim: true, maxlength: 80 },
     source: { type: String, enum: LEAD_SOURCES, default: 'Website' },
