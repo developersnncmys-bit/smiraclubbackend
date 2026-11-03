@@ -94,7 +94,13 @@ exports.requestOtp = catchAsync(async (req, res) => {
   const user = await User.findOne({ phoneDigits: digits }).select('+otp.codeHash');
   if (!user) throw ApiError.notFound('No account is registered against that number');
   if (user.status !== 'Active') throw ApiError.forbidden('That account has been disabled');
-  if (!user.mobileAccess) throw ApiError.forbidden('That account cannot sign in from a mobile');
+  // Signing in with a mobile number is how the web panel is opened — on a
+  // laptop or a phone — so only "No access" (neither web nor mobile) stops it.
+  // It used to read the mobile switch alone, which locked out every user set
+  // to "Web only".
+  if (user.webAccess === false && user.mobileAccess === false) {
+    throw ApiError.forbidden('Sign-in is turned off for this account — ask the owner to allow it in Users & Roles');
+  }
 
   // Don't let somebody hammer the send button, or an SMS bill with it.
   if (user.otp?.lastSentAt && Date.now() - user.otp.lastSentAt.getTime() < RESEND_SECONDS * 1000) {
