@@ -15,6 +15,8 @@ const MODULES = [
   'WhatsApp',
   'Reports',
   'Users',
+  // Desk settings: lead statuses (Customize), folders and the like.
+  'Settings',
 ];
 
 const PERMISSIONS = [
