@@ -10,6 +10,7 @@ const { record } = require('../helpers/audit');
 const { LEAD_SOURCES } = require('../config/constants');
 const Setting = require('../models/Setting');
 const stagesCfg = require('../helpers/leadStages');
+const automation = require('../helpers/leadAutomation');
 const Counter = require('../models/Counter');
 
 const base = crud(Lead, {
@@ -17,6 +18,11 @@ const base = crud(Lead, {
   searchable: ['name', 'phone', 'email', 'destination', 'code'],
   populate: { path: 'owner', select: 'name code' },
   ownerField: 'owner',
+  // A lead typed in runs the New lead rules (and Lead assigned, if it came with an owner).
+  afterCreate: async (doc, req) => {
+    await automation.fire('New lead', [doc], req);
+    if (req.body?.owner) await automation.fire('Lead assigned', [doc], req);
+  },
 });
 
 exports.list = base.list;
@@ -95,6 +101,7 @@ exports.importLeads = catchAsync(async (req, res) => {
     docs.forEach((d, i) => { d.code = `LEAD-${String(first + i).padStart(4, '0')}`; });
     added = await Lead.insertMany(docs, { ordered: false });
     await record(req, 'create', 'Lead', added.map((l) => l._id).join(','), `Imported ${added.length} lead(s)`);
+    await automation.fire('New lead', added, req);
   }
 
   res.status(201).json({
@@ -107,7 +114,26 @@ exports.importLeads = catchAsync(async (req, res) => {
     },
   });
 });
-exports.update = base.update;
+/**
+ * One lead edited. A change of status or owner runs the automation rules
+ * for it, and the lead is sent back as the rules left it.
+ */
+exports.update = catchAsync(async (req, res) => {
+  const where = { _id: req.params.id, ...scopeFilter(req, 'owner') };
+  const before = await Lead.findOne(where).select('status owner').lean();
+  if (!before) throw ApiError.notFound('Lead not found');
+  const { code, ...payload } = req.body || {};
+  let doc = await Lead.findOneAndUpdate(where, { ...payload, updatedBy: req.user?._id }, { new: true, runValidators: true });
+  if (!doc) throw ApiError.notFound('Lead not found');
+  await record(req, 'update', 'Lead', doc._id, `Updated ${doc.code || doc.name}`);
+
+  let automated = [];
+  if (payload.status && payload.status !== before.status) automated.push(...(await automation.fire('Lead status changed', [doc], req)));
+  if (payload.owner && String(payload.owner) !== String(before.owner || '')) automated.push(...(await automation.fire('Lead assigned', [doc], req)));
+  if (automated.length) doc = await Lead.findById(doc._id);
+  await doc.populate({ path: 'owner', select: 'name code' });
+  res.json({ success: true, data: doc, automated: [...new Set(automated)] });
+});
 exports.remove = base.remove;
 
 /** Moving a lead along, with the reason if it is being lost. */
@@ -132,7 +158,8 @@ exports.moveStage = catchAsync(async (req, res) => {
   await lead.save();
 
   await record(req, 'update', 'Lead', lead._id, `${lead.code}: ${from} → ${status}`);
-  res.json({ success: true, data: lead });
+  const automated = from !== status ? await automation.fire('Lead status changed', [lead], req) : [];
+  res.json({ success: true, data: automated.length ? await Lead.findById(lead._id) : lead, automated });
 });
 
 /** A call, a message, a note — whatever just happened on this lead. */
@@ -169,7 +196,8 @@ exports.assign = catchAsync(async (req, res) => {
   );
 
   await record(req, 'assign', 'Lead', list.join(','), `${result.modifiedCount} lead(s) reassigned`);
-  res.json({ success: true, data: { moved: result.modifiedCount } });
+  const automated = await automation.fire('Lead assigned', list, req);
+  res.json({ success: true, data: { moved: result.modifiedCount }, automated });
 });
 
 /** Won means a member exists — so make one if there is not already. */
@@ -339,7 +367,15 @@ exports.bulkUpdate = catchAsync(async (req, res) => {
   }
 
   await record(req, 'update', 'Lead', `${ids.length} lead(s)`, `Bulk change on ${changed} lead(s)`);
-  res.json({ success: true, data: { changed } });
+
+  // The rules for what changed, on the leads this person could change.
+  let automated = [];
+  if (fields.status || fields.owner) {
+    const mine = (await Lead.find(where).select('_id').lean()).map((l) => l._id);
+    if (fields.status) automated.push(...(await automation.fire('Lead status changed', mine, req)));
+    if (fields.owner) automated.push(...(await automation.fire('Lead assigned', mine, req)));
+  }
+  res.json({ success: true, data: { changed }, automated: [...new Set(automated)] });
 });
 
 /** Many leads deleted in one request — for clearing out a bad import. */

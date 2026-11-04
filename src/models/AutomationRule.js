@@ -16,8 +16,20 @@ const conditionSchema = new mongoose.Schema(
   { _id: false }
 );
 
+/**
+ * A step. `action` is the sentence the builder shows; a lead rule also
+ * carries `type` and `value`, which the engine (helpers/leadAutomation)
+ * actually does: Move status, Assign to, Create task, Add to folder,
+ * Send WhatsApp. `dueIn` is how many hours after the trigger a task is due.
+ */
 const stepSchema = new mongoose.Schema(
-  { wait: { type: String, default: 'Immediately' }, action: String },
+  {
+    wait: { type: String, default: 'Immediately' },
+    action: String,
+    type: { type: String, enum: ['Move status', 'Assign to', 'Create task', 'Add to folder', 'Send WhatsApp', null] },
+    value: mongoose.Schema.Types.Mixed,
+    dueIn: Number,
+  },
   { _id: false }
 );
 
@@ -29,6 +41,17 @@ const ruleSchema = new mongoose.Schema(
     conditions: [conditionSchema],
     steps: [stepSchema],
     otherwise: String,
+
+    /**
+     * Which leads a lead rule is for. All optional: `status` is the status
+     * a lead moved to (for "Lead status changed"), `owner` the person it
+     * was assigned to or belongs to, `source` where it came from.
+     */
+    match: {
+      status: String,
+      owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      source: String,
+    },
 
     /** A rule can be narrowed to a branch, a team or a role. */
     branch: String,
