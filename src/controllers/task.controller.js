@@ -33,7 +33,12 @@ async function repeatIfDone(doc, req) {
 const base = crud(Task, {
   name: 'Task',
   searchable: ['title', 'customerName', 'code'],
-  populate: { path: 'owner', select: 'name code' },
+  // The lead too, so a task shows its customer's number, status and owner
+  // even when that lead is not among the ones loaded on the screen.
+  populate: [
+    { path: 'owner', select: 'name code' },
+    { path: 'lead', select: 'name phone status owner code', populate: { path: 'owner', select: 'name' } },
+  ],
   ownerField: 'owner',
   defaultSort: 'dueAt',
   afterUpdate: repeatIfDone,
