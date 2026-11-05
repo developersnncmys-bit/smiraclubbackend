@@ -27,6 +27,19 @@ exports.complete = catchAsync(async (req, res) => {
   res.json({ success: true, data: task });
 });
 
+/** Add a comment to a task. */
+exports.comment = catchAsync(async (req, res) => {
+  const text = String(req.body.text || '').trim().slice(0, 1000);
+  if (!text) throw ApiError.badRequest('Write a comment first');
+  const task = await Task.findByIdAndUpdate(
+    req.params.id,
+    { $push: { comments: { text, by: req.user._id, byName: req.user.name, at: new Date() } } },
+    { new: true }
+  ).populate('owner', 'name code');
+  if (!task) throw ApiError.notFound('Task not found');
+  res.json({ success: true, data: task });
+});
+
 /** Today, overdue and done — the three piles the desk works from. */
 exports.board = catchAsync(async (req, res) => {
   const filter = {};

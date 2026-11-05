@@ -51,6 +51,16 @@ const taskSchema = new mongoose.Schema(
     nextAction: String,
     note: String,
 
+    /** Comments people add as the task goes along: "called, no answer", "call back 5 pm". */
+    comments: [
+      {
+        text: { type: String, trim: true, maxlength: 1000 },
+        by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        byName: String,
+        at: { type: Date, default: Date.now },
+      },
+    ],
+
     /** Set when an automation raised it rather than a person. */
     raisedBy: { type: String, default: 'Person' },
 

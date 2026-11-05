@@ -12,6 +12,7 @@ router
   .get(can('CRM', 'view'), c.list)
   .post(can('CRM', 'create'), validate({ title: 'required' }), c.create);
 
+router.post('/:id/comments', can('CRM', 'view'), c.comment);
 router.patch('/:id/complete', can('CRM', 'edit'), c.complete);
 
 router
