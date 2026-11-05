@@ -49,6 +49,8 @@ const leadSchema = new mongoose.Schema(
       roomsRequired: { type: Number, min: 0 },
       lastExpenses: { type: Number, min: 0 },
       planToTravel: { type: String, trim: true, maxlength: 80 },
+      nextDestination: { type: String, trim: true, maxlength: 120 },
+      nextTripDate: Date,
 
       checkIn: Date,
       checkOut: Date,
