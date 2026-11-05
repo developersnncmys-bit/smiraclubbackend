@@ -3,12 +3,40 @@ const ApiError = require('../helpers/ApiError');
 const catchAsync = require('../helpers/catchAsync');
 const { crud } = require('../helpers/crud');
 
+/** A repeating task that was just done: make the next one, once. */
+async function repeatIfDone(doc, req) {
+  if (!doc || doc.status !== 'Completed' || !doc.repeat || doc.nextMade) return;
+  const due = new Date(doc.dueAt || Date.now());
+  if (doc.repeat === 'Daily') due.setDate(due.getDate() + 1);
+  if (doc.repeat === 'Weekly') due.setDate(due.getDate() + 7);
+  if (doc.repeat === 'Monthly') due.setMonth(due.getMonth() + 1);
+  const claimed = await Task.updateOne({ _id: doc._id, nextMade: { $ne: true } }, { $set: { nextMade: true } });
+  if (!claimed.modifiedCount) return;
+  doc.nextMade = true;
+  await Task.create({
+    title: doc.title,
+    type: doc.type,
+    owner: doc.owner?._id || doc.owner,
+    customer: doc.customer,
+    customerName: doc.customerName,
+    lead: doc.lead,
+    dueAt: due,
+    priority: doc.priority,
+    repeat: doc.repeat,
+    note: doc.note,
+    createdByName: doc.createdByName,
+    raisedBy: doc.raisedBy,
+    createdBy: req.user?._id,
+  });
+}
+
 const base = crud(Task, {
   name: 'Task',
   searchable: ['title', 'customerName', 'code'],
   populate: { path: 'owner', select: 'name code' },
   ownerField: 'owner',
   defaultSort: 'dueAt',
+  afterUpdate: repeatIfDone,
 });
 
 exports.list = base.list;
@@ -24,6 +52,7 @@ exports.complete = catchAsync(async (req, res) => {
     { new: true }
   );
   if (!task) throw ApiError.notFound('Task not found');
+  await repeatIfDone(task, req);
   res.json({ success: true, data: task });
 });
 

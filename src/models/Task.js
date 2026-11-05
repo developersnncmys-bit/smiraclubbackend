@@ -47,6 +47,10 @@ const taskSchema = new mongoose.Schema(
     },
     completedAt: Date,
 
+    /** Done, it comes back: the next one is made a day, week or month on. */
+    repeat: { type: String, enum: ['', 'Daily', 'Weekly', 'Monthly'], default: '' },
+    nextMade: { type: Boolean, default: false },
+
     lastAction: String,
     nextAction: String,
     note: String,
