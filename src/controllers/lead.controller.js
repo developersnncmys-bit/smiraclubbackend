@@ -12,6 +12,21 @@ const Setting = require('../models/Setting');
 const stagesCfg = require('../helpers/leadStages');
 const automation = require('../helpers/leadAutomation');
 const Counter = require('../models/Counter');
+const { buildFilter, buildOptions, paginate } = require('../helpers/query');
+
+/**
+ * The leads this person may see and work: the ones their role's reach
+ * covers, and any lead somebody has given them a task on. A follow-up sent
+ * to a colleague used to point at a lead they could not open — no number,
+ * no history, no way to move its status. Deleting still goes by the role.
+ */
+async function leadScope(req) {
+  const own = scopeFilter(req, 'owner');
+  if (!Object.keys(own).length) return {};
+  const viaTasks = await Task.distinct('lead', { owner: req.user._id, lead: { $ne: null } });
+  if (!viaTasks.length) return own;
+  return { $and: [{ $or: [own, { _id: { $in: viaTasks } }] }] };
+}
 
 const base = crud(Lead, {
   name: 'Lead',
@@ -25,8 +40,20 @@ const base = crud(Lead, {
   },
 });
 
-exports.list = base.list;
-exports.getOne = base.getOne;
+const POPULATE = { path: 'owner', select: 'name code' };
+
+exports.list = catchAsync(async (req, res) => {
+  const filter = { ...buildFilter(req.query, { searchable: ['name', 'phone', 'email', 'destination', 'code'] }), ...(await leadScope(req)) };
+  const options = buildOptions(req.query, { defaultSort: '-createdAt' });
+  const result = await paginate(Lead, filter, options, { populate: POPULATE });
+  res.json({ success: true, ...result });
+});
+
+exports.getOne = catchAsync(async (req, res) => {
+  const lead = await Lead.findOne({ _id: req.params.id, ...(await leadScope(req)) }).populate(POPULATE);
+  if (!lead) throw ApiError.notFound('Lead not found');
+  res.json({ success: true, data: lead });
+});
 exports.create = base.create;
 
 /**
@@ -119,7 +146,7 @@ exports.importLeads = catchAsync(async (req, res) => {
  * for it, and the lead is sent back as the rules left it.
  */
 exports.update = catchAsync(async (req, res) => {
-  const where = { _id: req.params.id, ...scopeFilter(req, 'owner') };
+  const where = { _id: req.params.id, ...(await leadScope(req)) };
   const before = await Lead.findOne(where).select('status owner').lean();
   if (!before) throw ApiError.notFound('Lead not found');
   const { code, ...payload } = req.body || {};
@@ -143,7 +170,7 @@ exports.moveStage = catchAsync(async (req, res) => {
   if (!LEAD_STAGES.includes(status)) throw ApiError.badRequest(`status has to be one of: ${LEAD_STAGES.join(', ')}`);
   if (status === 'Lost' && !lostReason) throw ApiError.badRequest('A lost lead needs a reason');
 
-  const lead = await Lead.findOne({ _id: req.params.id, ...scopeFilter(req, 'owner') });
+  const lead = await Lead.findOne({ _id: req.params.id, ...(await leadScope(req)) });
   if (!lead) throw ApiError.notFound('Lead not found');
 
   const from = lead.status;
@@ -168,7 +195,7 @@ exports.addActivity = catchAsync(async (req, res) => {
   if (!text) throw ApiError.badRequest('Say what happened');
 
   const lead = await Lead.findOneAndUpdate(
-    { _id: req.params.id, ...scopeFilter(req, 'owner') },
+    { _id: req.params.id, ...(await leadScope(req)) },
     {
       $push: { activities: { kind, text, by: req.user._id, byName: req.user.name } },
       lastContactAt: new Date(),
@@ -191,7 +218,7 @@ exports.assign = catchAsync(async (req, res) => {
   if (!target) throw ApiError.badRequest('That team member does not exist');
 
   const result = await Lead.updateMany(
-    { _id: { $in: list }, ...scopeFilter(req, 'owner') },
+    { _id: { $in: list }, ...(await leadScope(req)) },
     { owner, $push: { activities: { kind: 'status', text: 'Reassigned', byName: req.user.name } } }
   );
 
@@ -202,7 +229,7 @@ exports.assign = catchAsync(async (req, res) => {
 
 /** Won means a member exists — so make one if there is not already. */
 exports.convert = catchAsync(async (req, res) => {
-  const lead = await Lead.findOne({ _id: req.params.id, ...scopeFilter(req, 'owner') });
+  const lead = await Lead.findOne({ _id: req.params.id, ...(await leadScope(req)) });
   if (!lead) throw ApiError.notFound('Lead not found');
   if (lead.convertedCustomer) throw ApiError.conflict('That lead is already a member');
 
@@ -351,7 +378,7 @@ exports.bulkUpdate = catchAsync(async (req, res) => {
   if (fields.owner && !(await User.exists({ _id: fields.owner }))) throw ApiError.badRequest('That team member does not exist');
   if (!Object.keys(fields).length && !addTag && !removeTag) throw ApiError.badRequest('Nothing to change');
 
-  const where = { _id: { $in: ids }, ...scopeFilter(req, 'owner') };
+  const where = { _id: { $in: ids }, ...(await leadScope(req)) };
   let changed = 0;
   // A tag cannot be pulled and added in the same update, so a move is two.
   if (removeTag) {
