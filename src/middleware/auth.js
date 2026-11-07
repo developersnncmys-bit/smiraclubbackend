@@ -24,6 +24,20 @@ const protect = catchAsync(async (req, res, next) => {
     throw ApiError.unauthorized('The password changed — sign in again');
   }
 
+  /*
+   * Seen just now. Using the panel is what "online" means: the dot on Users
+   * and Team Status goes green, and Last active is the last time they did
+   * something — not the last time they typed a password. Written at most
+   * once a minute, and never holding the request up.
+   */
+  const now = Date.now();
+  if (!user.lastActiveAt || now - new Date(user.lastActiveAt).getTime() > 60 * 1000) {
+    const seen = { lastActiveAt: new Date(now) };
+    if (!user.live || user.live === 'Offline') seen.live = 'Online';
+    User.updateOne({ _id: user._id }, { $set: seen }).catch(() => {});
+    user.set(seen);
+  }
+
   req.user = user;
 
   // Worked out once here so every list on this request shares the answer.
