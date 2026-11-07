@@ -37,20 +37,25 @@ const protect = catchAsync(async (req, res, next) => {
  * sheet, enforced. The role carries which modules it may open and what it may
  * do inside them.
  */
+/** What this role may do on one module: its own page list, else the old way. */
+function allowed(role, module, action) {
+  if (!role) return false;
+  if (role.superAdmin) return true;
+  const access = role.access;
+  const page = access && (typeof access.get === 'function' ? access.get(module) : access[module]);
+  if (page) return page.includes(action);
+  return Boolean(role.modules?.includes(module) && role.permissions?.includes(action));
+}
+
+const WORDS = { view: 'open', create: 'add', edit: 'edit', delete: 'delete' };
+
 const can = (module, action) =>
   catchAsync(async (req, res, next) => {
     const role = req.user?.role;
     if (!role) throw ApiError.forbidden('No role is set on your account');
-
-    if (role.superAdmin) return next();
-
-    if (!role.modules?.includes(module)) {
-      throw ApiError.forbidden(`Your role cannot open ${module}`);
-    }
-    if (!role.permissions?.includes(action)) {
-      throw ApiError.forbidden(`Your role cannot ${action} in ${module}`);
-    }
-    next();
+    if (allowed(role, module, action)) return next();
+    if (!allowed(role, module, 'view')) throw ApiError.forbidden(`Your role cannot open ${module}`);
+    throw ApiError.forbidden(`Your role cannot ${WORDS[action] || action} in ${module}`);
   });
 
 /** For the handful of places a named role is simpler than a permission. */
@@ -62,4 +67,4 @@ const restrictTo = (...roleNames) =>
     next();
   });
 
-module.exports = { protect, can, restrictTo };
+module.exports = { protect, can, restrictTo, allowed };

@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { protect, can } = require('../middleware/auth');
+const { protect, can, allowed } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 const c = require('../controllers/task.controller');
 const Task = require('../models/Task');
@@ -14,7 +14,7 @@ const catchAsync = require('../helpers/catchAsync');
  */
 const ownTaskOrEdit = catchAsync(async (req, res, next) => {
   const role = req.user?.role;
-  if (role?.superAdmin || role?.permissions?.includes('edit')) return next();
+  if (allowed(role, 'CRM', 'edit')) return next();
   const task = await Task.findById(req.params.id).select('owner').lean();
   if (!task) throw ApiError.notFound('Task not found');
   if (String(task.owner) !== String(req.user._id)) throw ApiError.forbidden('You can only change tasks given to you');

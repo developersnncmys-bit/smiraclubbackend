@@ -15,6 +15,13 @@ const roleSchema = new mongoose.Schema(
 
     modules: [{ type: String, enum: MODULES }],
     permissions: [{ type: String, enum: PERMISSIONS }],
+    /**
+     * Page by page: what the role may do on each module — { CRM: ['view',
+     * 'create'], Booking: ['view', 'edit', 'delete'] }. A module listed here
+     * follows its own list; one that is not falls back to `modules` and
+     * `permissions` above, so roles made before this keep working.
+     */
+    access: { type: Map, of: [{ type: String, enum: PERMISSIONS }], default: undefined },
     scope: { type: String, enum: SCOPES, default: 'own' },
     approvals: [{ type: String, enum: APPROVAL_AREAS }],
 
