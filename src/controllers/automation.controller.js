@@ -59,6 +59,11 @@ exports.run = catchAsync(async (req, res) => {
   // A rule that assigns: hand out the leads nobody has, up to each person's number.
   if ((rule.steps || []).some((s) => s.type === 'Assign to')) {
     const { given, done } = await leadAutomation.fill(rule._id, req);
+    if (!given) {
+      // Still a run: show it ran and why nothing went.
+      await AutomationRule.updateOne({ _id: rule._id }, { $inc: { runs: 1 }, $set: { lastRunAt: new Date() } });
+      await record(req, 'run', 'Automation rule', rule._id, `${rule.name} run by hand — nothing handed out: ${done.join(', ')}`);
+    }
     const fresh = await AutomationRule.findById(rule._id);
     return res.json({
       success: true,

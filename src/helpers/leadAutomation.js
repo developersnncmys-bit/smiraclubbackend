@@ -205,13 +205,14 @@ const ALL_AT_ONCE = 1000; // most handed out in one go when someone has no numbe
 
 async function fill(ruleOrId, req) {
   const rule = ruleOrId?._id ? ruleOrId : await AutomationRule.findById(ruleOrId).lean();
-  if (!rule || rule.status !== 'On') return { given: 0, done: [] };
+  if (!rule) return { given: 0, done: ['rule not found'] };
+  if (rule.status !== 'On') return { given: 0, done: ['the rule is switched off'] };
   const step = (rule.steps || []).find((s) => s.type === 'Assign to' && s.value);
-  if (!step) return { given: 0, done: [] };
+  if (!step) return { given: 0, done: ['the rule has no Assign to step'] };
 
   const people = (Array.isArray(step.value) ? step.value : [step.value]).filter(Boolean).map(String);
-  const users = await User.find({ _id: { $in: people }, status: { $ne: 'Inactive' } }).select('_id').lean();
-  if (!users.length) return { given: 0, done: [] };
+  const users = await User.find({ _id: { $in: people }, status: { $ne: 'Inactive' } }).select('_id name').lean();
+  if (!users.length) return { given: 0, done: ['the people ticked are inactive'] };
 
   // Room left today: each person's number less what they already have.
   const given = await Lead.givenSince(users.map((u) => u._id));
@@ -222,14 +223,25 @@ async function fill(ruleOrId, req) {
     room += Math.max(0, cap - given[String(u._id)]);
   }
   room = Math.min(room, ALL_AT_ONCE);
-  if (!room) return { given: 0, done: ['everyone has their number for today'] };
+  if (!room) {
+    const full = users.map((u) => `${firstName(u.name)} has ${given[String(u._id)]} of ${step.limits?.[String(u._id)] ?? step.limit} today`);
+    return { given: 0, done: [`everyone is full — ${full.join(', ')}. Raise the number to give more`] };
+  }
 
   const m = rule.match || {};
   const filter = { $or: [{ owner: null }, { owner: { $exists: false } }] };
   if (m.status) filter.status = m.status;
   if (m.source) filter.source = m.source;
   const leads = await Lead.find(filter).sort({ createdAt: -1 }).limit(room).select('name phone status owner source').lean();
-  if (!leads.length) return { given: 0, done: ['no leads waiting without a person'] };
+  if (!leads.length) {
+    const only = [m.status && `status "${m.status}"`, m.source && `source "${m.source}"`].filter(Boolean).join(' and ');
+    return {
+      given: 0,
+      done: [only
+        ? `no leads with no person in ${only}. This rule only takes those — remove the status/source to share all waiting leads`
+        : 'no leads waiting with no person'],
+    };
+  }
 
   const done = await apply(rule, leads, req);
   await AutomationRule.updateOne({ _id: rule._id }, { $inc: { runs: 1, completed: 1 }, $set: { lastRunAt: new Date() } });
