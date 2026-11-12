@@ -67,6 +67,8 @@ router.get('/dashboard', c.dashboard);
 router.post('/bookings/:id/accept', c.accept);
 router.post('/bookings/:id/decline', c.decline);
 router.patch('/accepting', c.setAccepting);
+router.get('/stock', c.stock);
+router.patch('/stock/:id', c.updateStock);
 router.get('/performance', c.performance);
 router.get('/availability', c.availability);
 router.patch('/availability', c.setAvailability);

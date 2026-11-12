@@ -684,6 +684,140 @@ exports.decline = answer(false);
  * Closed does not touch a booking already accepted — it says nothing new
  * should be sent, which the desk reads on the partner's record.
  */
+// -- Their own stock, edited by them ----------------------------------------
+
+/** One property as the partner edits it: details, rooms, rates. */
+function stockFor(i) {
+  return {
+    id: i._id,
+    code: i.code,
+    name: i.name,
+    category: i.category,
+    destination: i.destination || '',
+    address: i.address || '',
+    checkIn: i.checkIn || '',
+    checkOut: i.checkOut || '',
+    contact: i.contact || '',
+    description: i.description || '',
+    amenities: i.amenities || [],
+    units: i.units || 0,
+    booked: i.booked || 0,
+    blocked: i.blocked || 0,
+    status: i.status,
+    baseRate: i.baseRate || 0,
+    rooms: (i.rooms || []).map((r) => ({
+      type: r.type || '',
+      count: r.count || 0,
+      occupancy: r.occupancy || 2,
+      mealPlan: r.mealPlan || '',
+      rack: r.rack ?? null,
+      smira: r.smira ?? null,
+      member: r.member ?? null,
+      weekend: r.weekend ?? null,
+    })),
+  };
+}
+
+/** GET /partner-portal/stock — every property of theirs, in full, to edit. */
+exports.stock = catchAsync(async (req, res) => {
+  mustBeLive(req.partner);
+  const items = await InventoryItem.find({ partner: req.partner._id }).sort('name').lean();
+  res.json({ success: true, data: items.map(stockFor) });
+});
+
+/**
+ * PATCH /partner-portal/stock/:id — what a partner may change on their own:
+ * the property's description, address, times and amenities; how many rooms
+ * are released and whether the property is taking stays; and the rates of
+ * each room type. The commission and the contract stay with the desk. Every
+ * change is written to the partner's history, so the desk sees who changed
+ * what and when.
+ */
+exports.updateStock = catchAsync(async (req, res) => {
+  mustBeLive(req.partner);
+  const item = await InventoryItem.findOne({ _id: req.params.id, partner: req.partner._id });
+  if (!item) throw ApiError.notFound('That is not one of your properties');
+
+  const b = req.body || {};
+  const text = (v, max) => String(v ?? '').trim().slice(0, max);
+  const money = (v) => {
+    if (v === '' || v === null || v === undefined) return null;
+    const n = Math.round(Number(v));
+    if (!Number.isFinite(n) || n < 0) throw ApiError.badRequest('A rate has to be a number, 0 or more');
+    return n;
+  };
+  const whole = (v, label) => {
+    const n = Math.floor(Number(v));
+    if (!Number.isFinite(n) || n < 0) throw ApiError.badRequest(`${label} has to be a whole number, 0 or more`);
+    return n;
+  };
+  const changed = [];
+
+  // The property
+  for (const [key, max, label] of [
+    ['description', 3000, 'description'],
+    ['address', 300, 'address'],
+    ['checkIn', 40, 'check-in time'],
+    ['checkOut', 40, 'check-out time'],
+    ['contact', 80, 'contact'],
+  ]) {
+    if (b[key] !== undefined && text(b[key], max) !== (item[key] || '')) {
+      item[key] = text(b[key], max);
+      changed.push(label);
+    }
+  }
+  if (Array.isArray(b.amenities)) {
+    item.amenities = b.amenities.map((a) => text(a, 60)).filter(Boolean).slice(0, 40);
+    changed.push('amenities');
+  }
+
+  // Rooms and inventory
+  if (b.units !== undefined) {
+    const units = whole(b.units, 'Rooms released');
+    if (units < (item.booked || 0)) {
+      throw ApiError.badRequest(`${item.booked} room(s) are already booked — release at least that many`);
+    }
+    if (units !== item.units) changed.push(`rooms released ${item.units || 0} → ${units}`);
+    item.units = units;
+  }
+  if (b.status !== undefined) {
+    if (!['Active', 'Blocked'].includes(b.status)) throw ApiError.badRequest('Status is Active or Blocked');
+    if (b.status !== item.status) changed.push(b.status === 'Blocked' ? 'paused' : 'opened again');
+    item.status = b.status;
+  }
+
+  // Rates
+  if (b.baseRate !== undefined) {
+    const rate = money(b.baseRate) ?? 0;
+    if (rate !== item.baseRate) changed.push(`base rate ${item.baseRate || 0} → ${rate}`);
+    item.baseRate = rate;
+  }
+  if (Array.isArray(b.rooms)) {
+    item.rooms = b.rooms.slice(0, 30).map((r, i) => {
+      const was = item.rooms?.[i] || {};
+      return {
+        ...(was.toObject ? was.toObject() : was),
+        type: text(r.type, 80) || was.type || `Room ${i + 1}`,
+        count: whole(r.count ?? 0, 'Rooms of a type'),
+        occupancy: Math.max(1, whole(r.occupancy ?? 2, 'Occupancy')),
+        mealPlan: text(r.mealPlan, 60),
+        rack: money(r.rack),
+        smira: money(r.smira),
+        member: money(r.member),
+        weekend: money(r.weekend),
+      };
+    });
+    changed.push('room types and rates');
+  }
+
+  if (!changed.length) return res.json({ success: true, message: 'Nothing changed', data: stockFor(item) });
+
+  await item.save();
+  req.partner.activities.push({ at: new Date(), text: `${item.name}: ${changed.join(', ')} — changed in the partner portal` });
+  await req.partner.save({ validateBeforeSave: false });
+  res.json({ success: true, message: 'Saved', data: stockFor(item) });
+});
+
 exports.setAccepting = catchAsync(async (req, res) => {
   mustBeLive(req.partner);
   const open = req.body?.open !== false;
