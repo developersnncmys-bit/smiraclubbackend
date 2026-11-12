@@ -29,6 +29,8 @@ const stepSchema = new mongoose.Schema(
     type: { type: String, enum: ['Move status', 'Assign to', 'Create task', 'Add to folder', 'Send WhatsApp', null] },
     value: mongoose.Schema.Types.Mixed,
     dueIn: Number,
+    // Assign to: the most leads one person is given in a day (0 = no limit).
+    limit: Number,
   },
   { _id: false }
 );

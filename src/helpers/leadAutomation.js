@@ -81,17 +81,27 @@ async function apply(rule, leads, req) {
        * name every time, so one new lead at a time all went to one person.
        */
       const given = await Lead.givenSince(turns.map((u) => u._id));
+      // The most one person is given in a day; once everyone has it, the
+      // rest stay where they are.
+      const limit = Math.max(0, Math.floor(Number(step.limit) || 0));
       const now = new Date();
       const tally = {};
-      const ops = leads.map((l) => {
-        const u = turns.reduce((best, p) => (given[String(p._id)] < given[String(best._id)] ? p : best), turns[0]);
+      let left = 0;
+      const ops = [];
+      for (const l of leads) {
+        const open = limit ? turns.filter((p) => given[String(p._id)] < limit) : turns;
+        if (!open.length) { left += 1; continue; }
+        const u = open.reduce((best, p) => (given[String(p._id)] < given[String(best._id)] ? p : best), open[0]);
         given[String(u._id)] += 1;
         tally[firstName(u.name)] = (tally[firstName(u.name)] || 0) + 1;
         ownerOf.set(String(l._id), u._id);
-        return { updateOne: { filter: { _id: l._id }, update: { $set: { owner: u._id, assignedAt: now }, $push: { activities: note(`assigned to ${u.name}`) } } } };
-      });
-      await Lead.bulkWrite(ops);
-      done.push(`assigned to ${Object.entries(tally).map(([n, c]) => `${n} (${c})`).join(', ')}`);
+        ops.push({ updateOne: { filter: { _id: l._id }, update: { $set: { owner: u._id, assignedAt: now }, $push: { activities: note(`assigned to ${u.name}`) } } } });
+      }
+      if (ops.length) {
+        await Lead.bulkWrite(ops);
+        done.push(`assigned to ${Object.entries(tally).map(([n, c]) => `${n} (${c})`).join(', ')}`);
+      }
+      if (left) done.push(`${left} not assigned — everyone has their ${limit} for today`);
     }
 
     if (step.type === 'Create task') {
