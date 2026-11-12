@@ -53,7 +53,9 @@ exports.list = catchAsync(async (req, res) => {
 exports.givenToday = catchAsync(async (req, res) => {
   const ids = String(req.query.ids || '').split(',').map((s) => s.trim()).filter((s) => /^[a-f0-9]{24}$/i.test(s)).slice(0, 50);
   const counts = ids.length ? await Lead.givenSince(ids) : {};
-  res.json({ success: true, data: counts });
+  // How many leads wait with no person — what an Assign to rule hands out.
+  const waiting = await Lead.countDocuments({ $or: [{ owner: null }, { owner: { $exists: false } }] });
+  res.json({ success: true, data: counts, waiting });
 });
 
 exports.getOne = catchAsync(async (req, res) => {
