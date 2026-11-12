@@ -49,6 +49,13 @@ exports.list = catchAsync(async (req, res) => {
   res.json({ success: true, ...result });
 });
 
+/** GET /leads/given-today?ids=a,b,c — leads each person was given today. */
+exports.givenToday = catchAsync(async (req, res) => {
+  const ids = String(req.query.ids || '').split(',').map((s) => s.trim()).filter((s) => /^[a-f0-9]{24}$/i.test(s)).slice(0, 50);
+  const counts = ids.length ? await Lead.givenSince(ids) : {};
+  res.json({ success: true, data: counts });
+});
+
 exports.getOne = catchAsync(async (req, res) => {
   const lead = await Lead.findOne({ _id: req.params.id, ...(await leadScope(req)) }).populate(POPULATE);
   if (!lead) throw ApiError.notFound('Lead not found');

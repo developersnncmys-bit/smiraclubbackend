@@ -11,6 +11,7 @@ router.get('/funnel', can('CRM', 'view'), c.funnel);
 router.get('/lost-analysis', can('CRM', 'view'), c.lostAnalysis);
 router.get('/by-source', can('CRM', 'view'), c.bySource);
 router.get('/today', can('CRM', 'view'), c.today);
+router.get('/given-today', can('CRM', 'view'), c.givenToday);
 router.post('/assign', can('CRM', 'assign'), c.assign);
 router.post('/import', can('CRM', 'create'), c.importLeads);
 router.post('/bulk', can('CRM', 'edit'), c.bulkUpdate);

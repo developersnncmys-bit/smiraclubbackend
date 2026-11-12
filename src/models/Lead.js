@@ -85,6 +85,8 @@ const leadSchema = new mongoose.Schema(
     label: String,
 
     owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
+    /** When it was last given to somebody — by hand, by import or by a rule. */
+    assignedAt: Date,
     branch: String,
     department: String,
 
@@ -117,6 +119,7 @@ withCode(leadSchema, 'LEAD', { pad: 4, start: 2000 });
 
 leadSchema.index({ name: 'text', phone: 'text', destination: 'text' });
 leadSchema.index({ status: 1, owner: 1, createdAt: -1 });
+leadSchema.index({ owner: 1, assignedAt: -1 });
 
 /** Days in the current stage — the funnel report asks for this. */
 leadSchema.virtual('daysInStage').get(function daysInStage() {
@@ -137,5 +140,47 @@ leadSchema.pre('save', function stampStage(next) {
   }
   next();
 });
+
+/*
+ * Given to somebody: stamp the time. The automation's "take turns" counts
+ * each person's leads given today, so every way a lead changes hands has
+ * to leave the same mark — a new lead with an owner, an edit, a bulk move.
+ */
+leadSchema.pre('save', function stampAssign(next) {
+  if (this.owner && (this.isNew || this.isModified('owner'))) this.assignedAt = new Date();
+  next();
+});
+
+function stampAssignOnUpdate(next) {
+  const upd = this.getUpdate() || {};
+  const owner = upd.owner !== undefined ? upd.owner : upd.$set?.owner;
+  if (owner) {
+    upd.$set = { ...(upd.$set || {}), assignedAt: new Date() };
+    this.setUpdate(upd);
+  }
+  next();
+}
+leadSchema.pre('findOneAndUpdate', stampAssignOnUpdate);
+leadSchema.pre('updateOne', stampAssignOnUpdate);
+leadSchema.pre('updateMany', stampAssignOnUpdate);
+
+leadSchema.pre('insertMany', function stampImported(next, docs) {
+  const now = new Date();
+  (Array.isArray(docs) ? docs : []).forEach((d) => { if (d && d.owner && !d.assignedAt) d.assignedAt = now; });
+  next();
+});
+
+/** How many leads each of these people was given since `since` (default: today). */
+leadSchema.statics.givenSince = async function givenSince(userIds, since) {
+  const from = since || new Date(new Date().setHours(0, 0, 0, 0));
+  const ids = userIds.map((id) => new mongoose.Types.ObjectId(String(id)));
+  const rows = await this.aggregate([
+    { $match: { owner: { $in: ids }, assignedAt: { $gte: from } } },
+    { $group: { _id: '$owner', n: { $sum: 1 } } },
+  ]);
+  const counts = Object.fromEntries(userIds.map((id) => [String(id), 0]));
+  rows.forEach((r) => { counts[String(r._id)] = r.n; });
+  return counts;
+};
 
 module.exports = mongoose.model('Lead', leadSchema);

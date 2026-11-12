@@ -74,13 +74,24 @@ async function apply(rule, leads, req) {
       const users = await User.find({ _id: { $in: people }, status: { $ne: 'Inactive' } }).select('name').lean();
       if (!users.length) continue;
       const turns = people.map((id) => users.find((u) => String(u._id) === String(id))).filter(Boolean);
-      const ops = leads.map((l, i) => {
-        const u = turns[i % turns.length];
+      /*
+       * Taking turns, fairly: each lead goes to whoever has been given the
+       * fewest leads today — counting the ones given by hand, by import and
+       * by any rule, not just this one. It used to start from the first
+       * name every time, so one new lead at a time all went to one person.
+       */
+      const given = await Lead.givenSince(turns.map((u) => u._id));
+      const now = new Date();
+      const tally = {};
+      const ops = leads.map((l) => {
+        const u = turns.reduce((best, p) => (given[String(p._id)] < given[String(best._id)] ? p : best), turns[0]);
+        given[String(u._id)] += 1;
+        tally[firstName(u.name)] = (tally[firstName(u.name)] || 0) + 1;
         ownerOf.set(String(l._id), u._id);
-        return { updateOne: { filter: { _id: l._id }, update: { $set: { owner: u._id }, $push: { activities: note(`assigned to ${u.name}`) } } } };
+        return { updateOne: { filter: { _id: l._id }, update: { $set: { owner: u._id, assignedAt: now }, $push: { activities: note(`assigned to ${u.name}`) } } } };
       });
       await Lead.bulkWrite(ops);
-      done.push(`assigned to ${turns.map((u) => firstName(u.name)).join(', ')}`);
+      done.push(`assigned to ${Object.entries(tally).map(([n, c]) => `${n} (${c})`).join(', ')}`);
     }
 
     if (step.type === 'Create task') {
