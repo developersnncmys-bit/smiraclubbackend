@@ -19,6 +19,12 @@ connectDB()
       console.log(`Smira API listening on http://localhost:${PORT}`);
     });
 
+    // Rules that assign keep handing out waiting leads, up to each person's number a day.
+    const { fillAll } = require('./src/helpers/leadAutomation');
+    const FILL_EVERY = 5 * 60 * 1000;
+    setTimeout(() => fillAll().catch(() => {}), 30 * 1000);
+    setInterval(() => fillAll().catch(() => {}), FILL_EVERY);
+
     const shutdown = (signal) => () => {
       console.log(`\n${signal} received — closing the server`);
       server.close(() => process.exit(0));

@@ -172,7 +172,9 @@ leadSchema.pre('insertMany', function stampImported(next, docs) {
 
 /** How many leads each of these people was given since `since` (default: today). */
 leadSchema.statics.givenSince = async function givenSince(userIds, since) {
-  const from = since || new Date(new Date().setHours(0, 0, 0, 0));
+  // Today starts at midnight in India, whatever the server's clock zone.
+  const IST = 5.5 * 60 * 60 * 1000;
+  const from = since || new Date(Math.floor((Date.now() + IST) / 86400000) * 86400000 - IST);
   const ids = userIds.map((id) => new mongoose.Types.ObjectId(String(id)));
   const rows = await this.aggregate([
     { $match: { owner: { $in: ids }, assignedAt: { $gte: from } } },

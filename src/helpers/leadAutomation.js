@@ -193,4 +193,56 @@ async function fire(event, leadsOrIds, req) {
   }
 }
 
-module.exports = { fire, EVENTS };
+/**
+ * Fill: a rule with an "Assign to" step hands out leads nobody has yet, up
+ * to each person's number for today. Runs on "Run now", when the rule is
+ * saved or switched on, and every few minutes on its own (server.js), so
+ * leads keep going out until everyone has their number. The rule's other
+ * steps (a task, a status) run on those leads too.
+ * Resolves with how many leads went, and the words of what was done.
+ */
+const ALL_AT_ONCE = 1000; // most handed out in one go when someone has no number
+
+async function fill(ruleOrId, req) {
+  const rule = ruleOrId?._id ? ruleOrId : await AutomationRule.findById(ruleOrId).lean();
+  if (!rule || rule.status !== 'On') return { given: 0, done: [] };
+  const step = (rule.steps || []).find((s) => s.type === 'Assign to' && s.value);
+  if (!step) return { given: 0, done: [] };
+
+  const people = (Array.isArray(step.value) ? step.value : [step.value]).filter(Boolean).map(String);
+  const users = await User.find({ _id: { $in: people }, status: { $ne: 'Inactive' } }).select('_id').lean();
+  if (!users.length) return { given: 0, done: [] };
+
+  // Room left today: each person's number less what they already have.
+  const given = await Lead.givenSince(users.map((u) => u._id));
+  let room = 0;
+  for (const u of users) {
+    const cap = Math.max(0, Math.floor(Number(step.limits?.[String(u._id)] ?? step.limit) || 0));
+    if (!cap) { room = ALL_AT_ONCE; break; }
+    room += Math.max(0, cap - given[String(u._id)]);
+  }
+  room = Math.min(room, ALL_AT_ONCE);
+  if (!room) return { given: 0, done: ['everyone has their number for today'] };
+
+  const m = rule.match || {};
+  const filter = { $or: [{ owner: null }, { owner: { $exists: false } }] };
+  if (m.status) filter.status = m.status;
+  if (m.source) filter.source = m.source;
+  const leads = await Lead.find(filter).sort({ createdAt: -1 }).limit(room).select('name phone status owner source').lean();
+  if (!leads.length) return { given: 0, done: ['no leads waiting without a person'] };
+
+  const done = await apply(rule, leads, req);
+  await AutomationRule.updateOne({ _id: rule._id }, { $inc: { runs: 1, completed: 1 }, $set: { lastRunAt: new Date() } });
+  await record(req, 'run', 'Automation rule', rule._id, `${rule.name}: ${leads.length} waiting lead(s) — ${done.join(', ')}`);
+  return { given: leads.length, done };
+}
+
+/** Every rule that assigns, filled in turn. */
+async function fillAll() {
+  const rules = await AutomationRule.find({ status: 'On', 'steps.type': 'Assign to' }).lean();
+  for (const r of rules) {
+    try { await fill(r, null); } catch (err) { console.warn('Lead fill failed:', r.name, err.message); }
+  }
+}
+
+module.exports = { fire, fill, fillAll, EVENTS };

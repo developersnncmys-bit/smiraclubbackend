@@ -5,8 +5,16 @@ const catchAsync = require('../helpers/catchAsync');
 const { crud } = require('../helpers/crud');
 const { record } = require('../helpers/audit');
 const { AUTOMATION_TRIGGERS, OPERATORS } = require('../config/constants');
+const leadAutomation = require('../helpers/leadAutomation');
 
-const base = crud(AutomationRule, { name: 'Automation rule', searchable: ['name', 'when', 'code'] });
+// A rule that assigns starts handing out waiting leads as soon as it is saved or on.
+const fillSoon = (rule, req) => leadAutomation.fill(rule._id, req).catch((err) => console.warn('Lead fill failed:', err.message));
+
+const base = crud(AutomationRule, {
+  name: 'Automation rule',
+  searchable: ['name', 'when', 'code'],
+  afterUpdate: async (doc, req) => { await fillSoon(doc, req); },
+});
 
 exports.list = base.list;
 exports.getOne = base.getOne;
@@ -23,6 +31,7 @@ exports.create = catchAsync(async (req, res) => {
 
   const rule = await AutomationRule.create({ ...req.body, createdBy: req.user._id });
   await record(req, 'create', 'Automation rule', rule._id, `${rule.name} created`);
+  await fillSoon(rule, req);
   res.status(201).json({ success: true, data: rule });
 });
 
@@ -34,6 +43,7 @@ exports.toggle = catchAsync(async (req, res) => {
   await rule.save();
 
   await record(req, 'update', 'Automation rule', rule._id, `${rule.name} switched ${rule.status.toLowerCase()}`);
+  if (rule.status === 'On') await fillSoon(rule, req);
   res.json({ success: true, data: rule });
 });
 
@@ -46,13 +56,24 @@ exports.run = catchAsync(async (req, res) => {
   if (!rule) throw ApiError.notFound('Rule not found');
   if (rule.status !== 'On') throw ApiError.badRequest('That rule is switched off');
 
+  // A rule that assigns: hand out the leads nobody has, up to each person's number.
+  if ((rule.steps || []).some((s) => s.type === 'Assign to')) {
+    const { given, done } = await leadAutomation.fill(rule._id, req);
+    const fresh = await AutomationRule.findById(rule._id);
+    return res.json({
+      success: true,
+      message: given ? `${given} lead(s) handed out — ${done.join(', ')}` : `Nothing handed out — ${done.join(', ') || 'no leads waiting'}`,
+      data: fresh,
+    });
+  }
+
   rule.runs += 1;
   rule.completed += 1;
   rule.lastRunAt = new Date();
   await rule.save();
 
   await record(req, 'run', 'Automation rule', rule._id, `${rule.name} run by hand`);
-  res.json({ success: true, data: rule });
+  res.json({ success: true, message: 'Run', data: rule });
 });
 
 /** What the builder can be pointed at. */
