@@ -81,17 +81,23 @@ async function apply(rule, leads, req) {
        * name every time, so one new lead at a time all went to one person.
        */
       const given = await Lead.givenSince(turns.map((u) => u._id));
-      // The most one person is given in a day; once everyone has it, the
-      // rest stay where they are.
-      const limit = Math.max(0, Math.floor(Number(step.limit) || 0));
+      /*
+       * Each person's own number a day, set by the admin (any number; empty =
+       * no limit). Someone who has their number is skipped; when everyone is
+       * full, the rest stay where they are. When everyone has a number, leads
+       * go in proportion (fullness given/number), so 100 vs 50 fills evenly.
+       */
+      const capOf = (p) => Math.max(0, Math.floor(Number(step.limits?.[String(p._id)] ?? step.limit) || 0));
+      const allCapped = turns.every((p) => capOf(p) > 0);
+      const load = (p) => (allCapped ? given[String(p._id)] / capOf(p) : given[String(p._id)]);
       const now = new Date();
       const tally = {};
       let left = 0;
       const ops = [];
       for (const l of leads) {
-        const open = limit ? turns.filter((p) => given[String(p._id)] < limit) : turns;
+        const open = turns.filter((p) => !capOf(p) || given[String(p._id)] < capOf(p));
         if (!open.length) { left += 1; continue; }
-        const u = open.reduce((best, p) => (given[String(p._id)] < given[String(best._id)] ? p : best), open[0]);
+        const u = open.reduce((best, p) => (load(p) < load(best) ? p : best), open[0]);
         given[String(u._id)] += 1;
         tally[firstName(u.name)] = (tally[firstName(u.name)] || 0) + 1;
         ownerOf.set(String(l._id), u._id);
@@ -101,7 +107,7 @@ async function apply(rule, leads, req) {
         await Lead.bulkWrite(ops);
         done.push(`assigned to ${Object.entries(tally).map(([n, c]) => `${n} (${c})`).join(', ')}`);
       }
-      if (left) done.push(`${left} not assigned — everyone has their ${limit} for today`);
+      if (left) done.push(`${left} not assigned — everyone has their number for today`);
     }
 
     if (step.type === 'Create task') {
