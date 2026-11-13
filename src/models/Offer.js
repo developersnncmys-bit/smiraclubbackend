@@ -15,6 +15,8 @@ const offerSchema = new mongoose.Schema(
     minSpend: { type: Number, default: 0 },
 
     appliesTo: [String],
+    /** Membership plans (their codes) the coupon is for. Empty = every plan. */
+    plans: [String],
     segments: [String],
     channels: [String],
 

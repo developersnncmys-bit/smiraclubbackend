@@ -707,7 +707,7 @@ exports.membership = catchAsync(async (req, res) => {
    */
   const couponCode = text(b.coupon, 30).toUpperCase();
   const couponCheck = couponCode
-    ? await couponFor(couponCode, { spend: amount, use: 'Membership' })
+    ? await couponFor(couponCode, { spend: amount, use: 'Membership', plan: plan?.code || '' })
     : null;
 
   const lines = [
@@ -880,7 +880,8 @@ exports.membershipQuiz = catchAsync(async (req, res) => {
 exports.checkCoupon = catchAsync(async (req, res) => {
   const spend = Math.min(Math.max(Number(req.query.spend) || 0, 0), 5000000);
   const use = ['Membership', 'Booking'].includes(req.query.for) ? req.query.for : '';
-  const c = await couponFor(req.params.code, { spend, use });
+  const plan = String(req.query.plan || '').slice(0, 40);
+  const c = await couponFor(req.params.code, { spend, use, plan });
 
   res.set('Cache-Control', 'no-store');
   res.json({
@@ -1788,6 +1789,8 @@ exports.liveOffers = catchAsync(async (req, res) => {
       maxDiscount: o.maxDiscount,
       minSpend: o.minSpend,
       appliesTo: o.appliesTo || [],
+      // The membership plans it is for (plan codes); empty = every plan.
+      plans: o.plans || [],
       endsOn: o.endsOn || null,
     })),
   });

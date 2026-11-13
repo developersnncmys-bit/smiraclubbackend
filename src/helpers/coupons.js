@@ -26,7 +26,7 @@ const rupees = (n) => `₹${Math.round(n).toLocaleString('en-IN')}`;
  * worth showing someone, not an error. A flash offer is skipped: that is a
  * partner cutting their own rate on one listing, not a code to type.
  */
-async function couponFor(rawCode, { spend = 0, use = '' } = {}) {
+async function couponFor(rawCode, { spend = 0, use = '', plan = '' } = {}) {
   const code = String(rawCode || '').trim().toUpperCase();
   if (!code) return { code: '', valid: false, off: 0, reason: 'Enter a code first.' };
 
@@ -42,6 +42,9 @@ async function couponFor(rawCode, { spend = 0, use = '' } = {}) {
   if (offer.usageLimit && offer.used >= offer.usageLimit) return no('That code has been fully claimed.');
   if (use && offer.appliesTo?.length && !offer.appliesTo.includes(use))
     return no(`That code cannot be used on a ${use.toLowerCase()}.`);
+  // A coupon the desk tied to some plans works on those plans only.
+  if (plan && offer.plans?.length && !offer.plans.includes(String(plan)))
+    return no('That code is not for this plan.');
   if (offer.minSpend && spend < offer.minSpend)
     return no(`That code needs a spend of at least ${rupees(offer.minSpend)}.`);
 
