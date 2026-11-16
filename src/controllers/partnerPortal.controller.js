@@ -725,6 +725,46 @@ exports.stock = catchAsync(async (req, res) => {
   res.json({ success: true, data: items.map(stockFor) });
 });
 
+/** A partner's category, as the stock list names it. */
+const STOCK_CATEGORY = {
+  Hotel: 'Hotels', Villa: 'Villas', Package: 'Packages', Lifestyle: 'Experiences', Transport: 'Transport',
+  Restaurant: 'Restaurants', Activity: 'Activities', Spa: 'Spa and salon', 'Travel agent': 'Packages',
+};
+const PARTNER_STOCK = ['Hotels', 'Villas', 'Packages', 'Activities', 'Restaurants', 'Spa and salon', 'Attractions', 'Experiences', 'Transport'];
+
+/**
+ * POST /partner-portal/stock — the partner adds a property (or another
+ * unit, villa, package) themselves. It is theirs at once and the desk sees
+ * it in the partner's history.
+ */
+exports.addStock = catchAsync(async (req, res) => {
+  mustBeLive(req.partner);
+  const b = req.body || {};
+  const text = (v, max) => String(v ?? '').trim().slice(0, max);
+  const name = text(b.name, 120);
+  if (!name) throw ApiError.badRequest('Give the property a name');
+  const category = PARTNER_STOCK.includes(b.category) ? b.category : STOCK_CATEGORY[req.partner.category] || 'Hotels';
+  const count = await InventoryItem.countDocuments({ partner: req.partner._id });
+  if (count >= 50) throw ApiError.badRequest('That is the most properties one partner can add — call the desk for more');
+  const num = (v) => (Number.isFinite(Number(v)) && Number(v) >= 0 ? Math.floor(Number(v)) : 0);
+
+  const item = await InventoryItem.create({
+    category,
+    name,
+    partner: req.partner._id,
+    vendorName: req.partner.name,
+    destination: text(b.destination, 120) || req.partner.location || '',
+    address: text(b.address, 300),
+    units: num(b.units),
+    baseRate: num(b.baseRate),
+    description: text(b.description, 3000),
+    status: 'Active',
+  });
+  req.partner.activities.push({ at: new Date(), text: `${item.name} (${category}) added in the partner portal` });
+  await req.partner.save({ validateBeforeSave: false });
+  res.status(201).json({ success: true, message: 'Added', data: stockFor(item) });
+});
+
 /**
  * PATCH /partner-portal/stock/:id — what a partner may change on their own:
  * the property's description, address, times and amenities; how many rooms
@@ -754,7 +794,13 @@ exports.updateStock = catchAsync(async (req, res) => {
   const changed = [];
 
   // The property
+  if (b.name !== undefined) {
+    const name = text(b.name, 120);
+    if (!name) throw ApiError.badRequest('The name cannot be empty');
+    if (name !== item.name) { changed.push(`name ${item.name} → ${name}`); item.name = name; }
+  }
   for (const [key, max, label] of [
+    ['destination', 120, 'location'],
     ['description', 3000, 'description'],
     ['address', 300, 'address'],
     ['checkIn', 40, 'check-in time'],
