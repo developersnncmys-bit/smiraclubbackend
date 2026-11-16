@@ -2,6 +2,7 @@ const Membership = require('../models/Membership');
 const MembershipPlan = require('../models/MembershipPlan');
 const Payment = require('../models/Payment');
 const Customer = require('../models/Customer');
+const Lead = require('../models/Lead');
 const ApiError = require('../helpers/ApiError');
 const catchAsync = require('../helpers/catchAsync');
 const { scopeFilter } = require('../middleware/scope');
@@ -129,6 +130,81 @@ exports.collect = catchAsync(async (req, res) => {
 
   await record(req, 'payment', 'Membership', membership._id, `${amount} collected on ${membership.code}`);
   res.json({ success: true, data: { membership, payment } });
+});
+
+/**
+ * POST /memberships/:id/paid — the desk has seen the money: record what came
+ * in (the balance by default) and, once it is paid in full, activate the
+ * membership in the same step. A website membership waits as "Payment
+ * pending" until this is pressed — there was no button that did it, so a
+ * member who had paid by UPI never went active.
+ */
+exports.paidAndActivate = catchAsync(async (req, res) => {
+  const membership = await Membership.findOne({ _id: req.params.id }).populate('plan', 'durationMonths name');
+  if (!membership) throw ApiError.notFound('Membership not found');
+
+  const balance = Math.max(0, Number(membership.amount || 0) - Number(membership.paid || 0));
+  const amount = req.body.amount === undefined || req.body.amount === '' ? balance : Number(req.body.amount);
+  if (!Number.isFinite(amount) || amount < 0) throw ApiError.badRequest('Say how much has come in');
+
+  let payment = null;
+  if (amount > 0) {
+    membership.paid = Number(membership.paid || 0) + amount;
+    membership.timeline.push({ step: 'Payment received', at: new Date(), note: `₹${amount.toLocaleString('en-IN')}${req.body.reference ? ` · ref ${req.body.reference}` : ''}` });
+    payment = await Payment.create({
+      customer: membership.customer,
+      customerName: membership.name,
+      membership: membership._id,
+      product: `${membership.planName} membership`,
+      amount,
+      mode: req.body.mode || membership.paidVia || 'UPI',
+      gateway: '—',
+      reference: req.body.reference || membership.paymentRef,
+      collectedBy: req.user._id,
+      branch: membership.branch,
+      createdBy: req.user._id,
+    });
+  }
+
+  const full = Number(membership.paid || 0) >= Number(membership.amount || 0);
+  if (full) {
+    const now = new Date();
+    const months = membership.plan?.durationMonths || 12;
+    const until = new Date(now);
+    until.setMonth(until.getMonth() + months);
+    membership.status = 'Active';
+    membership.startedOn = membership.startedOn || now;
+    // The year starts the day it is paid, not the day it was asked for.
+    membership.expiresOn = until;
+    membership.activation.stage = 'Activated';
+    membership.activation.activatedOn = now;
+    membership.timeline.push({ step: 'Membership activated', at: now, note: req.body.note || `by ${req.user.name}` });
+  } else {
+    membership.activation.stage = 'Payment pending';
+  }
+  await membership.save();
+
+  // The lead it came with is no longer waiting on the money.
+  if (full && membership.phone) {
+    const ten = String(membership.phone).replace(/\D/g, '').slice(-10);
+    if (ten.length === 10) {
+      await Lead.updateMany(
+        { phone: { $regex: `${ten}$` }, tags: 'Payment pending' },
+        {
+          $pull: { tags: 'Payment pending' },
+          $push: { activities: { kind: 'status', text: `Membership ${membership.code} paid and activated`, byName: req.user.name, at: new Date() } },
+        }
+      );
+    }
+  }
+
+  await record(req, 'payment', 'Membership', membership._id,
+    `${membership.code}: ₹${amount} received${full ? ' — activated' : ` — ₹${Math.max(0, membership.amount - membership.paid)} still due`}`);
+  res.json({
+    success: true,
+    message: full ? `${membership.name}'s membership is active` : `Payment saved — ₹${Math.max(0, membership.amount - membership.paid)} still due`,
+    data: { membership, payment },
+  });
 });
 
 /** Renewing rolls the expiry forward and files the old term as history. */
