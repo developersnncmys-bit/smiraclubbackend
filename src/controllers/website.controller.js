@@ -1349,18 +1349,11 @@ exports.memberNotifications = catchAsync(async (req, res) => {
   const now = Date.now();
   const seenAt = me.notificationsReadAt ? new Date(me.notificationsReadAt).getTime() : 0;
 
-  const [bookings, membership, rewards, offers] = await Promise.all([
+  // Coupons and offers are not notifications: they show on the plans and the offers page.
+  const [bookings, membership, rewards] = await Promise.all([
     Booking.find({ customer: me._id }).sort({ updatedAt: -1 }).limit(20).lean(),
     Membership.findOne({ customer: me._id, status: { $ne: 'Cancelled' } }).sort({ receivedOn: -1 }).lean(),
     Reward.find({ customer: me._id, stage: { $nin: ['Delivered', 'Cancelled'] } }).limit(10).lean(),
-    Offer.find({
-      status: 'Live',
-      flash: { $ne: true },
-      $and: [
-        { $or: [{ startsOn: null }, { startsOn: { $lte: new Date() } }] },
-        { $or: [{ endsOn: null }, { endsOn: { $gte: new Date() } }] },
-      ],
-    }).sort({ endsOn: 1 }).limit(3).lean(),
   ]);
 
   const out = [];
@@ -1443,18 +1436,6 @@ exports.memberNotifications = catchAsync(async (req, res) => {
       body: 'A gift on your account is waiting to be claimed.',
       at: r.createdAt,
       cta: { label: 'Claim it', href: '/profile/rewards' },
-    });
-  }
-
-  for (const o of offers) {
-    add({
-      id: `offer-${o._id}`,
-      kind: 'Exclusive offer', tone: 'offer', icon: 'Percent',
-      title: o.name,
-      body: o.description
-        || (o.kind === 'Percent off' ? `${o.value}% off with code ${o.couponCode || ''}`.trim() : `Use code ${o.couponCode || ''}`.trim()),
-      at: o.updatedAt || o.createdAt,
-      cta: { label: 'View offers', href: '/offers' },
     });
   }
 

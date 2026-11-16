@@ -22,6 +22,16 @@ const stampSchema = new mongoose.Schema(
   { _id: false }
 );
 
+/** A break in the day: lunch, tea or washroom. `end` is empty while on it. */
+const breakSchema = new mongoose.Schema(
+  {
+    kind: { type: String, enum: ['Lunch', 'Tea', 'Washroom'], required: true },
+    start: { type: Date, required: true },
+    end: Date,
+  },
+  { _id: false }
+);
+
 const attendanceSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -29,6 +39,7 @@ const attendanceSchema = new mongoose.Schema(
     date: { type: String, required: true, index: true },
     checkIn: stampSchema,
     checkOut: stampSchema,
+    breaks: { type: [breakSchema], default: [] },
     // The day's standing. Set by check-in, and changeable by a manager.
     status: {
       type: String,

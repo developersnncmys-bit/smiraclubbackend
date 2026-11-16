@@ -8,6 +8,8 @@ router.use(protect);
 router.get('/me', c.mine);
 router.post('/check-in', c.checkIn);
 router.post('/check-out', c.checkOut);
+router.post('/break/start', c.breakStart);
+router.post('/break/end', c.breakEnd);
 router.get('/month', c.month);
 router.get('/', c.day);
 // Correcting somebody's day is a manager's job.

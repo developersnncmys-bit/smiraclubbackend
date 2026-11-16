@@ -26,6 +26,7 @@ function matches(rule, lead) {
   if (m.status && lead.status !== m.status) return false;
   if (m.owner && String(lead.owner?._id || lead.owner || '') !== String(m.owner)) return false;
   if (m.source && lead.source !== m.source) return false;
+  if (m.folder && !(lead.tags || []).includes(m.folder)) return false;
   return true;
 }
 
@@ -161,7 +162,7 @@ async function fire(event, leadsOrIds, req) {
     if (!rules.length) return [];
 
     const ids = leadsOrIds.map((l) => l?._id || l);
-    const leads = await Lead.find({ _id: { $in: ids } }).select('name phone status owner source').lean();
+    const leads = await Lead.find({ _id: { $in: ids } }).select('name phone status owner source tags').lean();
     const touched = new Set();
 
     for (const rule of rules) {
@@ -232,13 +233,14 @@ async function fill(ruleOrId, req) {
   const filter = { $or: [{ owner: null }, { owner: { $exists: false } }] };
   if (m.status) filter.status = m.status;
   if (m.source) filter.source = m.source;
+  if (m.folder) filter.tags = m.folder;
   const leads = await Lead.find(filter).sort({ createdAt: -1 }).limit(room).select('name phone status owner source').lean();
   if (!leads.length) {
-    const only = [m.status && `status "${m.status}"`, m.source && `source "${m.source}"`].filter(Boolean).join(' and ');
+    const only = [m.folder && `folder "${m.folder}"`, m.status && `status "${m.status}"`, m.source && `source "${m.source}"`].filter(Boolean).join(' and ');
     return {
       given: 0,
       done: [only
-        ? `no leads with no person in ${only}. This rule only takes those — remove the status/source to share all waiting leads`
+        ? `no leads with no person in ${only}. This rule only takes those — pick another folder, or remove the status/source, to share more`
         : 'no leads waiting with no person'],
     };
   }

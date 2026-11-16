@@ -54,8 +54,18 @@ exports.givenToday = catchAsync(async (req, res) => {
   const ids = String(req.query.ids || '').split(',').map((s) => s.trim()).filter((s) => /^[a-f0-9]{24}$/i.test(s)).slice(0, 50);
   const counts = ids.length ? await Lead.givenSince(ids) : {};
   // How many leads wait with no person — what an Assign to rule hands out.
-  const waiting = await Lead.countDocuments({ $or: [{ owner: null }, { owner: { $exists: false } }] });
-  res.json({ success: true, data: counts, waiting });
+  const nobody = { $or: [{ owner: null }, { owner: { $exists: false } }] };
+  const folder = String(req.query.folder || '').trim();
+  const waiting = await Lead.countDocuments(folder ? { ...nobody, tags: folder } : nobody);
+  // Each folder (lead tag) and how many of its leads still have no person.
+  const folders = (await Lead.aggregate([
+    { $match: { ...nobody, 'tags.0': { $exists: true } } },
+    { $unwind: '$tags' },
+    { $group: { _id: '$tags', waiting: { $sum: 1 } } },
+    { $sort: { _id: 1 } },
+    { $limit: 200 },
+  ])).map((f) => ({ name: f._id, waiting: f.waiting }));
+  res.json({ success: true, data: counts, waiting, folders });
 });
 
 exports.getOne = catchAsync(async (req, res) => {

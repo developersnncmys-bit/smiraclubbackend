@@ -67,10 +67,41 @@ exports.checkOut = catchAsync(async (req, res) => {
 
   // The day's mode stays what it was at check-in; the place is kept if the device gave one.
   const stamp = stampFrom(req, { mode: existing.checkIn.mode, needsPlace: false });
+  // A break still open ends with the day.
+  (existing.breaks || []).forEach((b) => { if (!b.end) b.end = stamp.at; });
   existing.checkOut = stamp;
   await existing.save();
   await record(req, 'update', 'Attendance', existing._id, `Checked out · ${stamp.mode}`);
   res.json({ success: true, data: existing.toObject() });
+});
+
+/** Breaks: Lunch, Tea, Washroom. One at a time, only while checked in. */
+const BREAKS = ['Lunch', 'Tea', 'Washroom'];
+
+exports.breakStart = catchAsync(async (req, res) => {
+  const kind = String(req.body?.kind || '');
+  if (!BREAKS.includes(kind)) throw ApiError.badRequest('Pick Lunch, Tea or Washroom');
+  const row = await Attendance.findOne({ user: req.user._id, date: todayIst() });
+  if (!row?.checkIn) throw ApiError.badRequest('Check in first');
+  if (row.checkOut) throw ApiError.badRequest('You have checked out for today');
+  const open = (row.breaks || []).find((b) => !b.end);
+  if (open) throw ApiError.conflict(`You are already on a ${open.kind.toLowerCase()} break — end it first`);
+  row.breaks.push({ kind, start: new Date() });
+  await row.save();
+  await record(req, 'update', 'Attendance', row._id, `${kind} break started`);
+  res.status(201).json({ success: true, data: row.toObject() });
+});
+
+exports.breakEnd = catchAsync(async (req, res) => {
+  const row = await Attendance.findOne({ user: req.user._id, date: todayIst() });
+  const open = (row?.breaks || []).find((b) => !b.end);
+  if (!open) throw ApiError.badRequest('You are not on a break');
+  open.end = new Date();
+  row.markModified('breaks');
+  await row.save();
+  const mins = Math.round((open.end - open.start) / 60000);
+  await record(req, 'update', 'Attendance', row._id, `${open.kind} break ended · ${mins} min`);
+  res.json({ success: true, data: row.toObject() });
 });
 
 /** A sign-in or sign-out, noted on the day's record. Never fails the sign-in. */
@@ -146,7 +177,7 @@ exports.month = catchAsync(async (req, res) => {
   const user = req.query.user || req.user._id;
   if (!require('mongoose').isValidObjectId(user)) throw ApiError.badRequest('That user does not exist');
   const rows = await Attendance.find({ user, date: { $regex: `^${month}-` } })
-    .select('date status checkIn.at checkIn.mode checkOut.at firstLoginAt editedByName editReason')
+    .select('date status checkIn.at checkIn.mode checkOut.at breaks firstLoginAt editedByName editReason')
     .sort('date')
     .lean();
   res.json({ success: true, month, today: todayIst(), rows });

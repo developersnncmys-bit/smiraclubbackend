@@ -54,6 +54,8 @@ const ruleSchema = new mongoose.Schema(
       status: String,
       owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
       source: String,
+      // A folder (a lead tag): only leads in it.
+      folder: String,
     },
 
     /** A rule can be narrowed to a branch, a team or a role. */
