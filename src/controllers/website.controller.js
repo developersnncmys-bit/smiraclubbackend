@@ -739,6 +739,34 @@ exports.membership = catchAsync(async (req, res) => {
     from.source !== 'Website' ? `Came from ${from.source}${from.campaign ? ` — campaign "${from.campaign}"` : ''}` : '',
   ].filter(Boolean);
 
+  /*
+   * The same person tapping Pay again for the same plan — the UPI app did
+   * not open, they came back, they tried twice — is one membership, not a
+   * new one each time. One still waiting on the money from the last two
+   * days is brought up to date instead.
+   */
+  const again = await Membership.findOne({
+    customer: customer._id,
+    plan: plan._id,
+    paid: { $in: [0, null] },
+    status: 'New',
+    receivedOn: { $gte: new Date(Date.now() - 2 * 86400000) },
+  }).sort({ receivedOn: -1 });
+  if (again) {
+    again.amount = amount;
+    again.privileges = list(b.privileges);
+    again.gifts = list(b.gifts);
+    again.sharing = Boolean(b.sharing);
+    if (paymentRef) again.paymentRef = paymentRef;
+    again.timeline.push({ step: 'Website', at: new Date(), note: `Tapped Pay again — ₹${amount.toLocaleString('en-IN')}` });
+    await again.save();
+    return res.status(200).json({
+      success: true,
+      message: 'Membership requested',
+      data: { reference: again.code, plan: wanted, expiresOn: again.expiresOn || expires },
+    });
+  }
+
   const membership = await Membership.create({
     upiId: memberUpi || undefined,
     paymentRef: paymentRef || undefined,

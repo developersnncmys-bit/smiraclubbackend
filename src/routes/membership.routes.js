@@ -15,6 +15,7 @@ router
 
 router.patch('/:id/activate', can('Membership', 'edit'), c.activate);
 router.post('/:id/paid', can('Membership', 'edit'), c.paidAndActivate);
+router.post('/:id/unpaid', can('Membership', 'edit'), c.undoPaid);
 router.post('/:id/collect', can('Membership', 'edit'), validate({ amount: 'required|number' }), c.collect);
 router.post('/:id/renew', can('Membership', 'edit'), c.renew);
 router.post('/:id/benefit', can('Membership', 'edit'), validate({ name: 'required' }), c.useBenefit);

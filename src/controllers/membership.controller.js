@@ -184,6 +184,14 @@ exports.paidAndActivate = catchAsync(async (req, res) => {
   }
   await membership.save();
 
+  // Copies of the same request (Pay tapped more than once) close with it.
+  if (full) {
+    await Membership.updateMany(
+      { _id: { $ne: membership._id }, customer: membership.customer, plan: membership.plan?._id || membership.plan, status: 'New', paid: { $in: [0, null] } },
+      { $set: { status: 'Cancelled' }, $push: { timeline: { step: 'Closed', at: new Date(), note: `Same request as ${membership.code}, which was paid` } } }
+    );
+  }
+
   // The lead it came with is no longer waiting on the money.
   if (full && membership.phone) {
     const ten = String(membership.phone).replace(/\D/g, '').slice(-10);
@@ -205,6 +213,42 @@ exports.paidAndActivate = catchAsync(async (req, res) => {
     message: full ? `${membership.name}'s membership is active` : `Payment saved — ₹${Math.max(0, membership.amount - membership.paid)} still due`,
     data: { membership, payment },
   });
+});
+
+/**
+ * POST /memberships/:id/unpaid — "Payment received" was pressed by mistake.
+ * The membership goes back to waiting for payment and the payment recorded
+ * for it is marked Failed. Nothing is deleted.
+ */
+exports.undoPaid = catchAsync(async (req, res) => {
+  const membership = await Membership.findOne({ _id: req.params.id });
+  if (!membership) throw ApiError.notFound('Membership not found');
+
+  const marked = await Payment.updateMany(
+    { membership: membership._id, status: 'Success' },
+    { $set: { status: 'Failed' } }
+  );
+  membership.paid = 0;
+  membership.status = 'New';
+  membership.activation.stage = 'Payment pending';
+  membership.activation.activatedOn = undefined;
+  membership.startedOn = undefined;
+  membership.timeline.push({ step: 'Activation undone', at: new Date(), note: `Payment was not received — undone by ${req.user.name}` });
+  await membership.save();
+
+  const ten = String(membership.phone || '').replace(/\D/g, '').slice(-10);
+  if (ten.length === 10) {
+    await Lead.updateMany(
+      { phone: { $regex: `${ten}$` }, label: 'Membership' },
+      {
+        $addToSet: { tags: 'Payment pending' },
+        $push: { activities: { kind: 'status', text: `Membership ${membership.code}: activation undone — payment not received`, byName: req.user.name, at: new Date() } },
+      }
+    );
+  }
+
+  await record(req, 'update', 'Membership', membership._id, `${membership.code} activation undone (${marked.modifiedCount} payment(s) marked failed)`);
+  res.json({ success: true, message: `${membership.name}'s membership is back to waiting for payment`, data: membership });
 });
 
 /** Renewing rolls the expiry forward and files the old term as history. */
