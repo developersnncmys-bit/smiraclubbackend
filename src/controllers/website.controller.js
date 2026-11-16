@@ -726,7 +726,7 @@ exports.membership = catchAsync(async (req, res) => {
         : `Coupon ${couponCode} typed but it does not hold — ${couponCheck.reason} Quoted price may be short.`
       : '',
     paidVia === 'UPI'
-      ? paymentRef ? '' : 'UPI did not go through on the website — call them to collect'
+      ? ''
       : paidVia
         ? `Wants to pay by ${paidVia === 'Card' ? 'card' : 'net banking'} — send them a payment link`
         : '',
