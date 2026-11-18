@@ -11,8 +11,21 @@ function errorHandler(err, req, res, next) {
   let error = err;
 
   if (err.name === 'ValidationError') {
-    const details = Object.values(err.errors).map((e) => ({ field: e.path, message: e.message }));
-    error = new ApiError(400, 'Some fields are not right', details);
+    // Said plainly, and naming the field — "Some fields are not right" on its own
+    // left people guessing which box to fix.
+    const label = (path) => String(path || '').split('.').filter((x) => !/^\d+$/.test(x)).pop()
+      .replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
+    const why = (e) => {
+      if (e.kind === 'maxlength') return `${label(e.path)} is too long (up to ${e.properties?.maxlength} characters)`;
+      if (e.kind === 'enum') return `${label(e.path)}: "${e.value}" is not one of the choices`;
+      if (e.kind === 'min') return `${label(e.path)} cannot be below ${e.properties?.min}`;
+      if (e.kind === 'max') return `${label(e.path)} cannot be above ${e.properties?.max}`;
+      if (e.name === 'CastError' || e.kind === 'Number') return `${label(e.path)} has to be a number`;
+      if (e.kind === 'required') return `${label(e.path)} is needed`;
+      return `${label(e.path)} is not right`;
+    };
+    const details = Object.values(err.errors).map((e) => ({ field: e.path, message: why(e) }));
+    error = new ApiError(400, `Please check: ${details.map((d) => d.message).join('; ')}`, details);
   }
 
   if (err.name === 'CastError') {

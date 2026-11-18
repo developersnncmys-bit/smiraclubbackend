@@ -5,7 +5,9 @@ const { withCode } = require('../helpers/ids');
  * A hotel, villa, transport or activity supplier. The Partners sheet's
  * onboarding record, their contract, and how they are actually performing.
  */
-const str = { type: String, trim: true, maxlength: 400 };
+const str = { type: String, trim: true, maxlength: 1000 };
+// Links (a Google Maps share link, an uploaded file) can run long.
+const link = { type: String, trim: true, maxlength: 4000 };
 const num = { type: Number, min: 0 };
 
 /**
@@ -60,7 +62,7 @@ const listingSchema = new mongoose.Schema(
       pin: str,
       latitude: str,
       longitude: str,
-      mapsUrl: str,
+      mapsUrl: link,
     },
 
     // Step 2 — rooms and photographs
@@ -81,8 +83,8 @@ const listingSchema = new mongoose.Schema(
       },
     ],
     photos: {
-      property: [{ type: String, trim: true, maxlength: 500 }],
-      rooms: [{ type: String, trim: true, maxlength: 500 }],
+      property: [link],
+      rooms: [link],
     },
 
     /**
@@ -171,9 +173,9 @@ const listingSchema = new mongoose.Schema(
     },
 
     // Step 3 — amenities and rules
-    amenities: [{ type: String, trim: true, maxlength: 60 }],
-    facilities: [{ type: String, trim: true, maxlength: 60 }],
-    rules: [{ type: String, trim: true, maxlength: 60 }],
+    amenities: [{ type: String, trim: true, maxlength: 120 }],
+    facilities: [{ type: String, trim: true, maxlength: 120 }],
+    rules: [{ type: String, trim: true, maxlength: 120 }],
 
     // Step 4 — pricing, inventory and policies
     pricing: {
@@ -236,9 +238,9 @@ const listingSchema = new mongoose.Schema(
       gst: str,
       tan: str,
       documentLinks: {
-        ownershipProof: str,
-        leaseAgreement: str,
-        authorisation: str,
+        ownershipProof: link,
+        leaseAgreement: link,
+        authorisation: link,
       },
     },
     /**
@@ -255,7 +257,7 @@ const listingSchema = new mongoose.Schema(
       accountNumber: str,
       ifsc: str,
       branch: str,
-      proofLink: str,
+      proofLink: link,
       /** e.g. name@okhdfcbank. Either this or the account, or both. */
       upiId: { type: String, trim: true, maxlength: 80 },
       upiName: { type: String, trim: true, maxlength: 120 },
