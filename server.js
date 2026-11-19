@@ -25,6 +25,10 @@ connectDB()
     setTimeout(() => fillAll().catch(() => {}), 30 * 1000);
     setInterval(() => fillAll().catch(() => {}), FILL_EVERY);
 
+    // Paid memberships from before Member IDs existed get theirs (SCS-1…).
+    const { backfillMemberIds } = require('./src/helpers/memberId');
+    setTimeout(() => backfillMemberIds().catch((e) => console.error('Member IDs:', e.message)), 10 * 1000);
+
     const shutdown = (signal) => () => {
       console.log(`\n${signal} received — closing the server`);
       server.close(() => process.exit(0));

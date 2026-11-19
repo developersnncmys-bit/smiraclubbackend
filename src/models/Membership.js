@@ -79,6 +79,9 @@ const membershipSchema = new mongoose.Schema(
     /** How they chose to pay, so the desk sends the right link. */
     paidVia: { type: String, enum: ['UPI', 'Card', 'Netbanking', 'Razorpay', ''], default: '' },
 
+    /** SCS-1, SCG-4… by tier, given once it is paid (helpers/memberId.js). */
+    memberId: { type: String, index: true, sparse: true },
+
     /** The Razorpay order the website opened for it, and the payment that settled it. */
     razorpayOrderId: { type: String, index: true, sparse: true },
     razorpayPaymentId: { type: String, index: true, sparse: true },
@@ -135,6 +138,19 @@ const membershipSchema = new mongoose.Schema(
 
 withCode(membershipSchema, 'MSU', { pad: 3, start: 0 });
 withPayRef(membershipSchema);
+
+// A paid membership gets its Member ID on the save that makes it paid.
+membershipSchema.pre('save', async function giveMemberId(next) {
+  try {
+    const { isPaidMembership, nextMemberId } = require('../helpers/memberId');
+    if (!this.memberId && this.status !== 'Cancelled' && isPaidMembership(this)) {
+      this.memberId = await nextMemberId(this.planName);
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
 
 membershipSchema.index({ name: 'text', phone: 'text', planName: 'text' });
 membershipSchema.index({ status: 1, expiresOn: 1, expert: 1 });

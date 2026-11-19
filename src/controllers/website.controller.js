@@ -1026,6 +1026,7 @@ function membershipForMember(membership) {
     plan: String(membership.planName || '').split(' ')[0],
     planName: membership.planName,
     reference: membership.code,
+    memberId: membership.memberId || '',
     /*
      * Active when the desk has it Active, or the activation finished, or it
      * is fully paid — whichever way it was marked, a paid member is a member.
