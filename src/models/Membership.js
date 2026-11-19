@@ -77,7 +77,11 @@ const membershipSchema = new mongoose.Schema(
     paymentRef: { type: String, trim: true, maxlength: 40 },
     paidTo: { type: String, trim: true, maxlength: 80 },
     /** How they chose to pay, so the desk sends the right link. */
-    paidVia: { type: String, enum: ['UPI', 'Card', 'Netbanking', ''], default: '' },
+    paidVia: { type: String, enum: ['UPI', 'Card', 'Netbanking', 'Razorpay', ''], default: '' },
+
+    /** The Razorpay order the website opened for it, and the payment that settled it. */
+    razorpayOrderId: { type: String, index: true, sparse: true },
+    razorpayPaymentId: { type: String, index: true, sparse: true },
 
     status: { type: String, enum: MEMBERSHIP_STATUSES, default: 'New', index: true },
 

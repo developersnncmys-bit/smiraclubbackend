@@ -45,6 +45,12 @@ router.post('/trip-enquiry', perAddress, perPhone, c.tripEnquiry);
 router.post('/package-booking', perAddress, perPhone, c.packageBooking);
 router.post('/booking', perAddress, perPhone, c.booking);
 router.post('/membership', perAddress, perPhone, c.membership);
+
+// Paying for it with Razorpay. The webhook's raw body is parsed in app.js.
+const pay = require('../controllers/razorpay.controller');
+router.post('/pay/order', perAddress, pay.order);
+router.post('/pay/verify', pay.verify);
+router.post('/razorpay/webhook', pay.webhook);
 // Finishing the quiz is not filling in a form, but it still writes a
 // lead, so it is capped the same way the forms are.
 router.post('/quiz', perAddress, perPhone, c.membershipQuiz);

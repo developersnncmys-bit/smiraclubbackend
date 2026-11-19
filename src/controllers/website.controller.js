@@ -642,9 +642,9 @@ exports.booking = catchAsync(async (req, res) => {
 /**
  * A membership bought on the website.
  *
- * There is no payment gateway yet, so Pay now sends the choice to the desk: it
- * lands on the Members page as a new membership with the payment pending, for
- * the member's expert to call, take the fee and activate. The website plans
+ * It lands as a new membership with the payment pending; the website then
+ * opens Razorpay for it (razorpay.controller.js), and the membership
+ * activates itself once Razorpay confirms the money. The website plans
  * are matched to the desk's plans by name; one the desk does not sell yet goes
  * on the nearest plan, with what was asked for written on it.
  */
@@ -666,7 +666,7 @@ exports.membership = catchAsync(async (req, res) => {
   const first = wanted.split(/\s+/)[0].toLowerCase();
   const plan = plans.find((p) => p.name.toLowerCase().startsWith(first)) || plans[plans.length - 1];
 
-  const amount = count(b.total, 0, 5000000);
+  const quoted = count(b.total, 0, 5000000);
   const from = attribution(b.attribution);
   const owner = await pickDeskOwner();
   const customer = await customerFor({ name, phone, email, profile: b.profile }, owner);
@@ -674,28 +674,6 @@ exports.membership = catchAsync(async (req, res) => {
   const expires = new Date();
   expires.setMonth(expires.getMonth() + months);
 
-  const memberUpi = text(b.upiId, 80);
-
-  /**
-   * What the member says they have paid, and where to.
-   *
-   * The website offers three ways to pay. UPI finishes on the phone,
-   * into Smira's own merchant account; a card or net banking is a
-   * link the desk raises, because neither can be taken safely on a page
-   * that is not a certified payment page.
-   *
-   * None of it is proof — a page cannot ask a bank whether money
-   * arrived — so the membership opens on Payment pending either way and
-   * the desk checks the account before activating it.
-   */
-  const paymentRef = text(b.paymentRef, 40).replace(/[^A-Za-z0-9]/g, '');
-  // How they chose to pay. UPI is the only one that finishes on the
-  // website; a card or net banking is a link the desk raises, and the
-  // desk needs to know which to send.
-  const WAYS = ['UPI', 'Card', 'Netbanking'];
-  const wantedWay = text(b.paidVia, 20);
-  const paidVia = WAYS.includes(wantedWay) ? wantedWay : '';
-  const paidTo = text(b.paidTo, 80);
 
   /**
    * The coupon, checked here rather than taken on trust.
@@ -705,15 +683,29 @@ exports.membership = catchAsync(async (req, res) => {
    * on the membership was a real one, so it is looked up again against the
    * Offers page and the answer goes in the timeline either way.
    */
+  /*
+   * What is charged is worked out here from the desk's own plan, not taken
+   * from the page — the amount now goes to Razorpay, and a price edited in
+   * the browser must not buy a membership. Only a plan the desk does not
+   * have (matched to the nearest one) keeps the quoted figure, and that one
+   * is checked by a person anyway.
+   */
+  const matched = plan.name.toLowerCase().startsWith(first);
+  const sharingPrice = b.sharing && Number(plan.sharing?.price) > 0 ? Number(plan.sharing.price) : 0;
+  const gross = Number(plan.price || 0) + sharingPrice;
+
   const couponCode = text(b.coupon, 30).toUpperCase();
   const couponCheck = couponCode
-    ? await couponFor(couponCode, { spend: amount, use: 'Membership', plan: plan?.code || '' })
+    ? await couponFor(couponCode, { spend: matched ? gross : quoted, use: 'Membership', plan: plan?.code || '' })
     : null;
+  const off = couponCheck?.valid ? Math.min(Number(couponCheck.off || 0), gross) : 0;
+  const amount = matched && gross > 0 ? Math.max(0, Math.round(gross - off)) : quoted;
 
   const lines = [
     `Bought on the website — ${wanted} membership`,
     plan.name.toLowerCase().startsWith(first) ? '' : `The desk has no ${wanted} plan yet — put on ${plan.name}, check with the member`,
-    `Quoted on the website: ₹${amount.toLocaleString('en-IN')} incl. taxes — take payment to activate`,
+    `Quoted on the website: ₹${amount.toLocaleString('en-IN')} incl. taxes — paid online through Razorpay`,
+    quoted !== amount ? `The page showed ₹${quoted.toLocaleString('en-IN')}; charged at the plan's price instead` : '',
     list(b.gifts).length ? `Welcome gift: ${list(b.gifts).join(', ')}` : '',
     list(b.privileges).length ? `Privileges: ${list(b.privileges).join(', ')}` : '',
     b.sharing ? 'Wants membership sharing' : '',
@@ -725,17 +717,6 @@ exports.membership = catchAsync(async (req, res) => {
         ? `Coupon ${couponCode} applied — ${couponCheck.off ? `₹${couponCheck.off.toLocaleString('en-IN')} off` : couponCheck.gives || couponCheck.name}`
         : `Coupon ${couponCode} typed but it does not hold — ${couponCheck.reason} Quoted price may be short.`
       : '',
-    paidVia === 'UPI'
-      ? ''
-      : paidVia
-        ? `Wants to pay by ${paidVia === 'Card' ? 'card' : 'net banking'} — send them a payment link`
-        : '',
-    paymentRef
-      ? `Says they have paid ₹${amount.toLocaleString('en-IN')}${paidTo ? ` to ${paidTo}` : ''} — UPI reference ${paymentRef}. Check the account before activating.`
-      : paidTo
-        ? `Says they have paid ${paidTo} — check the account before activating`
-        : '',
-    memberUpi ? `Will pay from UPI ${memberUpi} — raise the request, nothing was charged here` : '',
     from.source !== 'Website' ? `Came from ${from.source}${from.campaign ? ` — campaign "${from.campaign}"` : ''}` : '',
   ].filter(Boolean);
 
@@ -757,21 +738,17 @@ exports.membership = catchAsync(async (req, res) => {
     again.privileges = list(b.privileges);
     again.gifts = list(b.gifts);
     again.sharing = Boolean(b.sharing);
-    if (paymentRef) again.paymentRef = paymentRef;
     again.timeline.push({ step: 'Website', at: new Date(), note: `Tapped Pay again — ₹${amount.toLocaleString('en-IN')}` });
     await again.save();
     return res.status(200).json({
       success: true,
       message: 'Membership requested',
-      data: { reference: again.code, plan: wanted, expiresOn: again.expiresOn || expires },
+      data: { reference: again.code, payRef: again.payRef, amount, plan: wanted, expiresOn: again.expiresOn || expires },
     });
   }
 
   const membership = await Membership.create({
-    upiId: memberUpi || undefined,
-    paymentRef: paymentRef || undefined,
-    paidVia: paidVia || undefined,
-    paidTo: paidTo || undefined,
+    paidVia: 'Razorpay',
     customer: customer._id,
     name: customer.name,
     phone: customer.phone,
@@ -815,7 +792,7 @@ exports.membership = catchAsync(async (req, res) => {
     lines: [
       `Asked for ${plan.name} on the website — ₹${amount.toLocaleString('en-IN')} to collect`,
       `Membership ${membership.code} stays off the Members list until it is paid`,
-      memberUpi ? `Collect from UPI ${memberUpi}` : 'No UPI given — ask how they want to pay',
+      'Paying online through Razorpay — it activates by itself once paid; call if it is still pending',
       ...lines,
     ],
   });
@@ -823,7 +800,7 @@ exports.membership = catchAsync(async (req, res) => {
   res.status(201).json({
     success: true,
     message: 'Membership requested',
-    data: { reference: membership.code, plan: wanted, expiresOn: expires },
+    data: { reference: membership.code, payRef: membership.payRef, amount, plan: wanted, expiresOn: expires },
   });
 });
 
