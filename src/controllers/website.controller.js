@@ -1026,7 +1026,18 @@ function membershipForMember(membership) {
     plan: String(membership.planName || '').split(' ')[0],
     planName: membership.planName,
     reference: membership.code,
-    status: membership.activation?.stage === 'Activated' ? 'Active' : membership.activation?.stage || membership.status,
+    /*
+     * Active when the desk has it Active, or the activation finished, or it
+     * is fully paid — whichever way it was marked, a paid member is a member.
+     */
+    status: ['Active', 'Expiring soon'].includes(membership.status)
+      ? membership.status
+      : ['Expired', 'Suspended', 'Cancelled'].includes(membership.status)
+        ? membership.status
+        : membership.activation?.stage === 'Activated' ||
+            (Number(membership.amount || 0) > 0 && Number(membership.paid || 0) >= Number(membership.amount || 0))
+          ? 'Active'
+          : membership.activation?.stage || membership.status,
     expiresOn: membership.expiresOn || null,
     startedOn: membership.startedOn || membership.receivedOn || null,
     /*
@@ -1122,8 +1133,11 @@ exports.memberOtpVerify = catchAsync(async (req, res) => {
 const jwt = require('jsonwebtoken');
 
 const memberToken = (customer) =>
+  // A website member stays signed in for a year — the staff panel's short
+  // JWT_EXPIRES_IN was logging members out every week, and with no session
+  // the website could no longer load their membership.
   jwt.sign({ sub: customer._id, kind: 'member' }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+    expiresIn: process.env.MEMBER_SESSION_EXPIRES_IN || '365d',
   });
 
 exports.memberToken = memberToken;
