@@ -282,11 +282,8 @@ function profileFields(p) {
  */
 async function memberPlanOf(customer) {
   if (!customer?._id) return null;
-  const held = await Membership.findOne({
-    customer: customer._id,
-    status: { $nin: ['Cancelled', 'Expired'] },
-  }).sort({ receivedOn: -1 }).lean();
-  if (!held) return null;
+  const held = await heldMembership(customer, { populate: false });
+  if (!held || held.status === 'Expired') return null;
   if (held.expiresOn && new Date(held.expiresOn) < new Date()) return null;
 
   /**
@@ -952,6 +949,33 @@ const customerByPhone = (digits) =>
   Customer.findOne({ phone: new RegExp(`${digits.split('').join('\\D*')}$`) });
 
 /**
+ * The membership that counts for this person.
+ *
+ * Looked up across every customer record with the same number (the desk
+ * sometimes adds a person twice), and a paid, live membership wins over a
+ * newer request still waiting for payment, which used to hide the
+ * membership they actually hold.
+ */
+const sameNumber = (digits) =>
+  Customer.find({ phone: new RegExp(`${digits.split('').join('\\D*')}$`) }).select('_id').lean();
+
+async function heldMembership(customer, { populate = true } = {}) {
+  if (!customer?._id) return null;
+  const digits = tenDigits(customer.phone);
+  const same = digits.length === 10 ? await sameNumber(digits) : [];
+  const ids = [customer._id, ...same.map((c) => c._id)];
+  let q = Membership.find({ customer: { $in: ids }, status: { $ne: 'Cancelled' } }).sort({ receivedOn: -1 });
+  if (populate) q = q.populate('plan', MEMBER_PLAN_FIELDS);
+  const all = await q.lean();
+  const now = new Date();
+  const live = (m) =>
+    (m.status === 'Active' || m.activation?.stage === 'Activated' || Number(m.amount || 0) - Number(m.paid || 0) <= 0) &&
+    !['Expired', 'Suspended'].includes(m.status) &&
+    !(m.expiresOn && new Date(m.expiresOn) < now);
+  return all.find(live) || all[0] || null;
+}
+
+/**
  * "Send me a code" on the website's sign-in screen.
  *
  * The code is kept hashed against the number, not against a customer, so a
@@ -1056,19 +1080,26 @@ exports.memberOtpVerify = catchAsync(async (req, res) => {
   }
   await challenge.deleteOne();
 
-  const customer = await customerByPhone(digits);
-  const membership = customer
-    ? await Membership.findOne({ customer: customer._id, status: { $ne: 'Cancelled' } })
-        .sort({ receivedOn: -1 })
-        .populate('plan', MEMBER_PLAN_FIELDS)
-        .lean()
-    : null;
+  const found = await customerByPhone(digits);
+  /*
+   * A new number that has just proved its code gets its own customer record
+   * and a session straight away. Without one the website could never ask
+   * the desk what this person holds, so a membership bought later never
+   * showed on their profile.
+   */
+  const newName = text(req.body.name, 80);
+  const customer =
+    found ||
+    (newName.length >= 2
+      ? await Customer.create({ name: newName, phone: `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`, source: 'Website' })
+      : null);
+  const membership = customer ? await heldMembership(customer) : null;
 
   res.json({
     success: true,
-    message: customer ? 'Signed in' : 'Welcome to Smira Club',
+    message: found ? 'Signed in' : 'Welcome to Smira Club',
     data: {
-      isNew: !customer,
+      isNew: !found,
       // A session only for a number the desk already knows.
       token: customer ? memberToken(customer) : null,
       member: customer
@@ -1135,10 +1166,7 @@ const bookingForMember = (b) => ({
 exports.memberMe = catchAsync(async (req, res) => {
   const me = req.member;
   const [membership, bookings] = await Promise.all([
-    Membership.findOne({ customer: me._id, status: { $ne: 'Cancelled' } })
-      .sort({ receivedOn: -1 })
-      .populate('plan', MEMBER_PLAN_FIELDS)
-      .lean(),
+    heldMembership(me),
     Booking.find({ customer: me._id }).sort({ createdAt: -1 }).lean(),
   ]);
 
@@ -1329,7 +1357,7 @@ exports.memberNotifications = catchAsync(async (req, res) => {
   // Coupons and offers are not notifications: they show on the plans and the offers page.
   const [bookings, membership, rewards] = await Promise.all([
     Booking.find({ customer: me._id }).sort({ updatedAt: -1 }).limit(20).lean(),
-    Membership.findOne({ customer: me._id, status: { $ne: 'Cancelled' } }).sort({ receivedOn: -1 }).lean(),
+    heldMembership(me, { populate: false }),
     Reward.find({ customer: me._id, stage: { $nin: ['Delivered', 'Cancelled'] } }).limit(10).lean(),
   ]);
 
