@@ -1,5 +1,3 @@
-const Counter = require('../models/Counter');
-
 /**
  * Member IDs by tier, numbered from 1 within each tier:
  *   Silver SCS-1 · Gold SCG-1 · Platinum SCP-1 · Diamond SCD-1 · Crown SCC-1
@@ -21,14 +19,16 @@ const isPaidMembership = (m) =>
   m.activation?.stage === 'Activated' ||
   (Number(m.amount || 0) > 0 && Number(m.paid || 0) >= Number(m.amount || 0));
 
+/**
+ * The next number after the highest one still held, so deleting test
+ * memberships frees their numbers and the first real Silver member is SCS-1.
+ */
 async function nextMemberId(planName) {
+  const Membership = require('../models/Membership');
   const prefix = prefixFor(planName);
-  const doc = await Counter.findOneAndUpdate(
-    { _id: `MEMBERID-${prefix}` },
-    { $inc: { seq: 1 } },
-    { new: true, upsert: true }
-  );
-  return `${prefix}-${doc.seq}`;
+  const held = await Membership.find({ memberId: new RegExp(`^${prefix}-\\d+$`) }).select('memberId').lean();
+  const top = held.reduce((max, m) => Math.max(max, Number(String(m.memberId).split('-')[1]) || 0), 0);
+  return `${prefix}-${top + 1}`;
 }
 
 /**
