@@ -8,6 +8,8 @@ const messageSchema = new mongoose.Schema(
     text: String,
     at: { type: Date, default: Date.now },
     templateName: String,
+    /** WhatsApp's own id for it (from AdsEra), so a repeated webhook is not added twice. */
+    waId: String,
     delivered: { type: Boolean, default: true },
     read: { type: Boolean, default: false },
   },

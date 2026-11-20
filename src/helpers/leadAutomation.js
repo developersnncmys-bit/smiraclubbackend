@@ -32,18 +32,14 @@ function matches(rule, lead) {
 
 async function sendWhatsApp(leads, text) {
   try {
-    const wa = require('./openwa');
-    const session = await wa.findSession();
-    if (!session || session.status !== 'ready') return 0;
+    const adsera = require('./adsera');
+    if (!adsera.configured()) return 0;
     let sent = 0;
     // Paced, and capped, so a big bulk change cannot flood the number.
     for (const lead of leads.slice(0, 50)) {
       if (!lead.phone) continue;
       const body = String(text).replace(/\{name\}/g, firstName(lead.name)).slice(0, 4096);
-      await wa.call(`/sessions/${session.id}/messages/send-text`, {
-        method: 'POST',
-        body: { chatId: wa.chatIdFor(lead.phone), text: body },
-      }).then(() => { sent += 1; }).catch(() => {});
+      await adsera.sendText(lead.phone, body).then(() => { sent += 1; }).catch(() => {});
       await new Promise((r) => setTimeout(r, 2500));
     }
     return sent;

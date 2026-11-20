@@ -48,6 +48,9 @@ router.use('/uploads', require('./upload.routes'));
 router.use('/settings', require('./setting.routes'));
 router.use('/scheduled-reports', require('./scheduledReport.routes'));
 
+// AdsEra tells us about WhatsApp messages here (checked by its x-secret header).
+router.post('/adsera/webhook', require('../controllers/adseraWebhook.controller').receive);
+
 // What the public website sends in, with nobody signed in.
 router.use('/website', require('./website.routes'));
 

@@ -1,108 +1,107 @@
 const catchAsync = require('../helpers/catchAsync');
 const ApiError = require('../helpers/ApiError');
 const { record } = require('../helpers/audit');
-const wa = require('../helpers/openwa');
+const adsera = require('../helpers/adsera');
 
-/** What the panel shows: set up or not, and the session's state. */
-const shape = (s) =>
-  s
+/**
+ * The desk's WhatsApp number, through AdsEra (the official WhatsApp API).
+ *
+ * There is no QR code any more: the number is connected inside AdsEra, and
+ * this only reports which number that is and sends through it. Connect and
+ * Disconnect are kept so an older panel does not break, and say so.
+ */
+const shape = (a) =>
+  a
     ? {
         configured: true,
-        status: s.status, // created · initializing · qr_ready · authenticating · ready · disconnected · failed
-        connected: s.status === 'ready',
-        phone: s.phone || null,
-        name: s.pushName || null,
-        connectedAt: s.connectedAt || null,
+        provider: 'AdsEra',
+        status: a.status === 'connected' ? 'ready' : a.status || 'disconnected',
+        connected: a.status === 'connected',
+        phone: String(a.phone || '').replace(/\D/g, '') || null,
+        name: a.name || null,
+        quality: a.quality_rating || null,
+        tier: a.messaging_limit || a.tier || null,
       }
-    : { configured: true, status: 'not_connected', connected: false };
+    : { configured: true, provider: 'AdsEra', status: 'not_connected', connected: false };
 
 exports.status = catchAsync(async (req, res) => {
-  if (!wa.configured()) return res.json({ success: true, data: { configured: false, status: 'not_set_up', connected: false } });
+  if (!adsera.configured()) return res.json({ success: true, data: { configured: false, provider: 'AdsEra', status: 'not_set_up', connected: false } });
   try {
-    res.json({ success: true, data: shape(await wa.findSession()) });
+    res.json({ success: true, data: shape(await adsera.account({ fresh: true })) });
   } catch (err) {
-    res.json({ success: true, data: { configured: true, status: 'gateway_down', connected: false, message: err.message } });
+    res.json({ success: true, data: { configured: true, provider: 'AdsEra', status: 'gateway_down', connected: false, message: err.message } });
   }
 });
 
-/** Connect: make the session if needed and start it, so a QR code comes up. */
+/** Nothing to scan: the number is connected in AdsEra. */
 exports.connect = catchAsync(async (req, res) => {
-  const session = await wa.ensureSession();
-  if (!['ready', 'qr_ready', 'initializing', 'authenticating'].includes(session.status)) {
-    await wa.call(`/sessions/${session.id}/start`, { method: 'POST' }).catch((err) => {
-      // Already starting is fine.
-      if (err.statusCode !== 409) throw err;
-    });
-  }
-  await record(req, 'update', 'WhatsApp', session.id, 'Started connecting the WhatsApp number');
-  res.json({ success: true, data: shape(await wa.findSession()) });
+  res.json({ success: true, data: shape(await adsera.account({ fresh: true })) });
 });
 
-/** The QR code to scan, while there is one. */
 exports.qr = catchAsync(async (req, res) => {
-  const session = await wa.findSession();
-  if (!session) throw ApiError.notFound('Press Connect first');
-  if (session.status !== 'qr_ready') return res.json({ success: true, data: { ...shape(session), qrCode: null } });
-  const q = await wa.call(`/sessions/${session.id}/qr`).catch(() => null);
-  res.json({ success: true, data: { ...shape(session), qrCode: q?.qrCode || null } });
+  res.json({ success: true, data: { ...shape(await adsera.account({ fresh: true })), qrCode: null } });
 });
 
-/** Unlink the number from this desk. */
-exports.disconnect = catchAsync(async (req, res) => {
-  const session = await wa.findSession();
-  if (session) {
-    await wa.call(`/sessions/${session.id}/logout`, { method: 'POST' }).catch(() => {});
-    await wa.call(`/sessions/${session.id}/stop`, { method: 'POST' }).catch(() => {});
-  }
-  await record(req, 'update', 'WhatsApp', session?.id || '-', 'Disconnected the WhatsApp number');
-  res.json({ success: true, data: shape(await wa.findSession()) });
+exports.disconnect = catchAsync(async () => {
+  throw ApiError.badRequest('The WhatsApp number is managed in AdsEra — disconnect it there (app.adsera.in)');
 });
 
-async function readySession() {
-  const session = await wa.findSession();
-  if (!session || session.status !== 'ready') throw new ApiError(409, 'WhatsApp is not connected — open WhatsApp → Connect and scan the QR code');
-  return session;
-}
+/** Approved templates, for messages to people who have not written in 24 hours. */
+exports.templates = catchAsync(async (req, res) => {
+  res.json({ success: true, data: await adsera.templates() });
+});
 
 /** One message to one number. */
 exports.send = catchAsync(async (req, res) => {
   const { phone, text } = req.body || {};
   if (!phone || !String(text || '').trim()) throw ApiError.badRequest('A phone number and a message are both needed');
-  const session = await readySession();
-  const sent = await wa.call(`/sessions/${session.id}/messages/send-text`, {
-    method: 'POST',
-    body: { chatId: wa.chatIdFor(phone), text: String(text).slice(0, 4096) },
-  });
+  const sent = await adsera.sendText(phone, text);
   await record(req, 'create', 'WhatsApp', phone, `WhatsApp sent to ${phone}`);
-  res.status(201).json({ success: true, data: { id: sent?.id || sent?.messageId || null } });
+  res.status(201).json({ success: true, data: { id: sent?.data?._id || sent?.message?._id || null } });
+});
+
+/** One approved template to one number: { phone, template, vars }. */
+exports.sendTemplate = catchAsync(async (req, res) => {
+  const { phone, template, vars } = req.body || {};
+  if (!phone || !template) throw ApiError.badRequest('A phone number and a template are both needed');
+  await adsera.sendTemplate(template, phone, vars && typeof vars === 'object' ? vars : {});
+  await record(req, 'create', 'WhatsApp', phone, `WhatsApp template sent to ${phone}`);
+  res.status(201).json({ success: true, data: { sent: true } });
 });
 
 /**
- * One message to many numbers. Sent one by one, a few seconds apart, after
- * the reply — firing hundreds at once is the quickest way to get a number
- * banned. {name} in the text becomes each person's name.
+ * One message to many numbers, paced after the reply. {name} in the text
+ * becomes each person's name. With a template, it goes to everybody; plain
+ * text only reaches those who wrote in the last 24 hours.
  */
 exports.sendMany = catchAsync(async (req, res) => {
-  const { recipients = [], text } = req.body || {};
+  const { recipients = [], text, template, vars } = req.body || {};
   const list = (Array.isArray(recipients) ? recipients : []).filter((r) => r && r.phone);
   if (!list.length) throw ApiError.badRequest('Pick at least one number');
-  if (!String(text || '').trim()) throw ApiError.badRequest('Write the message first');
+  if (!template && !String(text || '').trim()) throw ApiError.badRequest('Write the message first');
   if (list.length > 1000) throw ApiError.badRequest('Send to at most 1000 people at a time');
-  const session = await readySession();
+  if (!adsera.configured()) throw new ApiError(503, 'WhatsApp is not set up on the server');
 
   res.status(202).json({ success: true, data: { queued: list.length } });
 
   let ok = 0;
   let failed = 0;
   for (const r of list) {
+    const first = String(r.name || '').split(' ')[0] || 'there';
     try {
-      const body = String(text).replace(/\{name\}/gi, String(r.name || '').split(' ')[0] || 'there').slice(0, 4096);
-      await wa.call(`/sessions/${session.id}/messages/send-text`, { method: 'POST', body: { chatId: wa.chatIdFor(r.phone), text: body } });
+      if (template) {
+        const filled = Object.fromEntries(
+          Object.entries(vars || {}).map(([k, v]) => [k, String(v).replace(/\{name\}/gi, first)])
+        );
+        await adsera.sendTemplate(template, r.phone, filled);
+      } else {
+        await adsera.sendText(r.phone, String(text).replace(/\{name\}/gi, first));
+      }
       ok += 1;
     } catch {
       failed += 1;
     }
-    await new Promise((done) => setTimeout(done, 3000 + Math.random() * 3000));
+    await new Promise((done) => setTimeout(done, 1000));
   }
   await record(req, 'create', 'WhatsApp', `${list.length} numbers`, `Bulk WhatsApp: ${ok} sent, ${failed} failed`).catch(() => {});
 });

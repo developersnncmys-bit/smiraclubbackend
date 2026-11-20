@@ -8,13 +8,15 @@ const gateway = require('../controllers/whatsappGateway.controller');
 
 router.use(protect);
 
-// -- The desk's number, linked by QR through OpenWA ------------------------
+// -- The desk's number, through AdsEra (official WhatsApp API) -------------
 router.get('/gateway', can('WhatsApp', 'view'), gateway.status);
 router.post('/gateway/connect', can('WhatsApp', 'edit'), gateway.connect);
 router.get('/gateway/qr', can('WhatsApp', 'edit'), gateway.qr);
 router.post('/gateway/disconnect', can('WhatsApp', 'edit'), gateway.disconnect);
 router.post('/gateway/send', can('WhatsApp', 'create'), gateway.send);
 router.post('/gateway/send-many', can('WhatsApp', 'create'), gateway.sendMany);
+router.get('/gateway/templates', can('WhatsApp', 'view'), gateway.templates);
+router.post('/gateway/send-template', can('WhatsApp', 'create'), gateway.sendTemplate);
 
 // -- The inbox --------------------------------------------------------------
 router.get('/overview', can('WhatsApp', 'view'), conversations.overview);

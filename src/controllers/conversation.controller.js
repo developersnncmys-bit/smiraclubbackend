@@ -3,7 +3,7 @@ const Lead = require('../models/Lead');
 const Task = require('../models/Task');
 const ApiError = require('../helpers/ApiError');
 const catchAsync = require('../helpers/catchAsync');
-const wa = require('../helpers/openwa');
+const adsera = require('../helpers/adsera');
 const { crud } = require('../helpers/crud');
 const { record } = require('../helpers/audit');
 
@@ -38,21 +38,23 @@ exports.reply = catchAsync(async (req, res) => {
   );
   if (!conversation) throw ApiError.notFound('Conversation not found');
 
-  // Out through the linked number, when there is one; the reply is kept either way.
+  // Out through AdsEra; the reply is kept in the inbox either way. A free-text
+  // reply only reaches somebody who wrote in the last 24 hours — otherwise
+  // WhatsApp refuses it and the panel is told why.
   let delivered = false;
-  try {
-    const session = await wa.findSession();
-    if (session?.status === 'ready' && conversation.phone) {
-      await wa.call(`/sessions/${session.id}/messages/send-text`, {
-        method: 'POST',
-        body: { chatId: wa.chatIdFor(conversation.phone), text: String(text).slice(0, 4096) },
-      });
+  let problem = '';
+  if (conversation.phone && adsera.configured()) {
+    try {
+      if (req.body.template) await adsera.sendTemplate(req.body.template, conversation.phone, req.body.vars || {});
+      else await adsera.sendText(conversation.phone, text);
       delivered = true;
+    } catch (err) {
+      problem = err.message || 'WhatsApp did not take the message';
     }
-  } catch {
-    /* not linked, or the gateway is down — the reply stays in the inbox */
+  } else if (!adsera.configured()) {
+    problem = 'WhatsApp is not set up on the server';
   }
-  res.json({ success: true, data: conversation, delivered });
+  res.json({ success: true, data: conversation, delivered, ...(problem ? { message: problem } : {}) });
 });
 
 /** A message coming the other way — from the customer or the bot. */
