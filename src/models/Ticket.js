@@ -88,6 +88,10 @@ const ticketSchema = new mongoose.Schema(
 
 withCode(ticketSchema, 'TCK', { pad: 4, start: 1000 });
 
+// WhatsApp to the customer when a request comes in and as it moves along.
+const { watchChanges } = require('../helpers/watchChanges');
+watchChanges(ticketSchema, ['stage'], (doc, info) => require('../helpers/notify').ticketChanged(doc, info));
+
 ticketSchema.index({ customerName: 'text', description: 'text', subCategory: 'text' });
 ticketSchema.index({ stage: 1, priority: 1, executive: 1 });
 

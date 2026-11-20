@@ -190,6 +190,7 @@ exports.tripEnquiry = catchAsync(async (req, res) => {
     owner: await pickDeskOwner(),
     activities: [{ kind: 'note', text: brief, byName: 'Website' }],
   });
+  require('../helpers/notify').welcome(lead).catch(() => {});
 
   // The reference is all a visitor gets back.
   res.status(201).json({
@@ -2013,6 +2014,7 @@ exports.enquiry = catchAsync(async (req, res) => {
     owner: await pickDeskOwner(),
     activities: [{ kind: 'note', text: brief, byName: 'Website' }],
   });
+  require('../helpers/notify').welcome(lead).catch(() => {});
 
   res.status(201).json({
     success: true,

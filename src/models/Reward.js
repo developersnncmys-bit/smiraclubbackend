@@ -59,4 +59,8 @@ const rewardSchema = new mongoose.Schema(
 
 withCode(rewardSchema, 'RWD', { pad: 3, start: 0 });
 
+// WhatsApp to the member as their gift moves along.
+const { watchChanges } = require('../helpers/watchChanges');
+watchChanges(rewardSchema, ['stage'], (doc, info) => require('../helpers/notify').giftChanged(doc, info));
+
 module.exports = mongoose.model('Reward', rewardSchema);

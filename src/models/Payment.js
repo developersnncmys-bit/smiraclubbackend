@@ -40,6 +40,13 @@ const paymentSchema = new mongoose.Schema(
 
 withCode(paymentSchema, 'PAY', { pad: 4, start: 9900 });
 
+// A WhatsApp receipt for money that has come in.
+const { watchChanges } = require('../helpers/watchChanges');
+watchChanges(paymentSchema, [], (doc, info) => {
+  if (info.isNew && doc.status === 'Success' && Number(doc.amount) > 0) return require('../helpers/notify').paymentReceived(doc);
+  return undefined;
+});
+
 paymentSchema.index({ customerName: 'text', reference: 'text' });
 paymentSchema.index({ paidOn: -1, status: 1 });
 

@@ -187,4 +187,11 @@ membershipSchema.pre('save', function trackExpiry(next) {
   next();
 });
 
+// WhatsApp to the member the moment their membership becomes Active.
+const { watchChanges } = require('../helpers/watchChanges');
+watchChanges(membershipSchema, ['status'], (doc, info) => {
+  if (doc.status === 'Active' && (info.isNew || info.changed.includes('status'))) return require('../helpers/notify').membershipActivated(doc);
+  return undefined;
+});
+
 module.exports = mongoose.model('Membership', membershipSchema);

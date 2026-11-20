@@ -25,6 +25,11 @@ connectDB()
     setTimeout(() => fillAll().catch(() => {}), 30 * 1000);
     setInterval(() => fillAll().catch(() => {}), FILL_EVERY);
 
+    // WhatsApp timers: booking reminders (2 days before) and staff follow-up reminders.
+    const notify = require('./src/helpers/notify');
+    setInterval(() => notify.sendBookingReminders().catch((e) => console.error('Booking reminders:', e.message)), 60 * 60 * 1000);
+    setInterval(() => notify.sendFollowupReminders().catch((e) => console.error('Follow-up reminders:', e.message)), 10 * 60 * 1000);
+
     // Paid memberships from before Member IDs existed get theirs (SCS-1…).
     const { backfillMemberIds } = require('./src/helpers/memberId');
     setTimeout(() => backfillMemberIds().catch((e) => console.error('Member IDs:', e.message)), 10 * 1000);

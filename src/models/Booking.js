@@ -117,6 +117,11 @@ const bookingSchema = new mongoose.Schema(
 );
 
 withCode(bookingSchema, 'BKG', { pad: 4, start: 8800 });
+
+// WhatsApp to the customer: request received, confirmed, dates changed, cancelled.
+const { watchChanges } = require('../helpers/watchChanges');
+bookingSchema.add({ reminderSentAt: Date });
+watchChanges(bookingSchema, ['status', 'checkIn', 'checkOut'], (doc, info) => require('../helpers/notify').bookingChanged(doc, info));
 withPayRef(bookingSchema);
 
 bookingSchema.index({ customerName: 'text', hotel: 'text', destination: 'text' });

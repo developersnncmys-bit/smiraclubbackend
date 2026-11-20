@@ -92,6 +92,8 @@ const leadSchema = new mongoose.Schema(
 
     lastContactAt: Date,
     nextFollowUpAt: Date,
+    /** The follow-up time the owner was last reminded about on WhatsApp. */
+    followUpRemindedFor: Date,
     presentationAt: Date,
     visitAt: Date,
 
