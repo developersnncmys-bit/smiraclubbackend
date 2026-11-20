@@ -1650,6 +1650,26 @@ const ourFile = (url, base) => {
   return at && base ? base + at[1] : url;
 };
 
+/**
+ * A listing with no photos of its own borrows the ones its partner uploaded
+ * when they signed up (property first, then rooms), so the website does not
+ * show an empty box for a hotel that did send pictures.
+ */
+async function withPartnerPhotos(items) {
+  const bare = items.filter((i) => !(i.images || []).length && i.partner);
+  if (!bare.length) return items;
+  const Partner = require('../models/Partner');
+  const partners = await Partner.find({ _id: { $in: [...new Set(bare.map((i) => String(i.partner)))] } })
+    .select('photos')
+    .lean();
+  const photos = new Map(
+    partners.map((p) => [String(p._id), [...(p.photos?.property || []), ...(p.photos?.rooms || [])].filter(Boolean)])
+  );
+  return items.map((i) =>
+    (i.images || []).length || !i.partner ? i : { ...i, images: photos.get(String(i.partner)) || [] }
+  );
+}
+
 function forWebsite(item, base, stay) {
   const selling = sellingRate(item.baseRate, item.markup);
   const member = memberRate(item.baseRate, item.markup, item.memberDiscount);
@@ -1723,9 +1743,11 @@ exports.catalog = catchAsync(async (req, res) => {
     where.$or = [{ name: like }, { destination: like }, { description: like }];
   }
 
-  const items = await InventoryItem.find(where)
-    .sort({ category: 1, name: 1 })
-    .lean({ virtuals: false });
+  const items = await withPartnerPhotos(
+    await InventoryItem.find(where)
+      .sort({ category: 1, name: 1 })
+      .lean({ virtuals: false })
+  );
 
   let open = items;
   if (from) {
@@ -1748,7 +1770,8 @@ exports.catalog = catchAsync(async (req, res) => {
 exports.catalogItem = catchAsync(async (req, res) => {
   const { id } = req.params;
   const where = mongoose.isValidObjectId(id) ? { _id: id } : { code: String(id).toUpperCase() };
-  const item = await InventoryItem.findOne({ ...where, status: { $in: ON_OFFER } }).lean({ virtuals: false });
+  const found = await InventoryItem.findOne({ ...where, status: { $in: ON_OFFER } }).lean({ virtuals: false });
+  const item = found ? (await withPartnerPhotos([found]))[0] : found;
   if (!item) throw ApiError.notFound('We do not have that one');
   res.json({
     success: true,
