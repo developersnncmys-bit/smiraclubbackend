@@ -18,7 +18,9 @@ function buildFilter(query, { searchable = [], allowed = null } = {}) {
     if (value && typeof value === 'object' && !Array.isArray(value)) {
       const ops = {};
       Object.entries(value).forEach(([op, v]) => {
-        if (['gt', 'gte', 'lt', 'lte', 'ne'].includes(op)) ops['$' + op] = Number.isNaN(Number(v)) ? v : Number(v);
+        // An ISO date (?updatedAt[gte]=2026-11-20T10:00:00.000Z) is compared as a date.
+        const isoDate = typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v) && !Number.isNaN(Date.parse(v));
+        if (['gt', 'gte', 'lt', 'lte', 'ne'].includes(op)) ops['$' + op] = isoDate ? new Date(v) : Number.isNaN(Number(v)) ? v : Number(v);
         if (op === 'in') ops.$in = String(v).split(',');
         if (op === 'nin') ops.$nin = String(v).split(',');
       });

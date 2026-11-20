@@ -25,6 +25,9 @@ connectDB()
     setTimeout(() => fillAll().catch(() => {}), 30 * 1000);
     setInterval(() => fillAll().catch(() => {}), FILL_EVERY);
 
+    // Indexes the lists need to be quick (only ever adds them).
+    require('./src/helpers/speedIndexes').ensureSpeedIndexes().catch((e) => console.error('Indexes:', e.message));
+
     // WhatsApp timers: booking reminders (2 days before) and staff follow-up reminders.
     const notify = require('./src/helpers/notify');
     setInterval(() => notify.sendBookingReminders().catch((e) => console.error('Booking reminders:', e.message)), 60 * 60 * 1000);

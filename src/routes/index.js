@@ -10,6 +10,9 @@ router.use('/attendance', require('./attendance.routes'));
 router.use('/roles', require('./role.routes'));
 
 router.use('/leads', require('./lead.routes'));
+
+// What changed, cheaply — so the panel only re-downloads lists that did.
+router.get('/sync/versions', require('../middleware/auth').protect, require('../controllers/sync.controller').versions);
 router.use('/tasks', require('./task.routes'));
 router.use('/customers', require('./customer.routes'));
 
