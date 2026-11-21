@@ -28,6 +28,11 @@ connectDB()
     // Indexes the lists need to be quick (only ever adds them).
     require('./src/helpers/speedIndexes').ensureSpeedIndexes().catch((e) => console.error('Indexes:', e.message));
 
+    // WhatsApp chats from AdsEra every 2 minutes — a backup for the webhook.
+    const chats = require('./src/helpers/adseraSync');
+    setTimeout(() => chats.syncRecent().catch((e) => console.error('WhatsApp sync:', e.message)), 20 * 1000);
+    setInterval(() => chats.syncRecent().catch((e) => console.error('WhatsApp sync:', e.message)), 2 * 60 * 1000);
+
     // WhatsApp timers: booking reminders (2 days before) and staff follow-up reminders.
     const notify = require('./src/helpers/notify');
     setInterval(() => notify.sendBookingReminders().catch((e) => console.error('Booking reminders:', e.message)), 60 * 60 * 1000);

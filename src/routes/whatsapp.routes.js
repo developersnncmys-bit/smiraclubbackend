@@ -16,6 +16,7 @@ router.post('/gateway/disconnect', can('WhatsApp', 'edit'), gateway.disconnect);
 router.post('/gateway/send', can('WhatsApp', 'create'), gateway.send);
 router.post('/gateway/send-many', can('WhatsApp', 'create'), gateway.sendMany);
 router.get('/gateway/templates', can('WhatsApp', 'view'), gateway.templates);
+router.post('/gateway/import', can('WhatsApp', 'edit'), gateway.importChats);
 router.post('/gateway/send-template', can('WhatsApp', 'create'), gateway.sendTemplate);
 
 // -- The inbox --------------------------------------------------------------

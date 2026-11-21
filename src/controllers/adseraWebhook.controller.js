@@ -37,11 +37,16 @@ async function inbound(d) {
   if (d.messageId && conversation?.messages?.some((m) => m.waId === d.messageId)) return; // already have it
 
   if (!conversation) {
-    const customer = await Customer.findOne(byNumber(ten)).select('_id name').lean();
+    const Lead = require('../models/Lead');
+    const [customer, lead] = await Promise.all([
+      Customer.findOne(byNumber(ten)).select('_id name').lean(),
+      Lead.findOne(byNumber(ten)).sort({ createdAt: -1 }).select('_id name').lean(),
+    ]);
     conversation = await Conversation.create({
       phone: pretty(ten),
-      name: customer?.name || d.name || pretty(ten),
+      name: customer?.name || d.name || lead?.name || pretty(ten),
       customer: customer?._id,
+      lead: lead?._id,
       source: 'WhatsApp',
       handledBy: 'Staff',
     });

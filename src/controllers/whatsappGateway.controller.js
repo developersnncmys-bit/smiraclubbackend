@@ -46,6 +46,15 @@ exports.disconnect = catchAsync(async () => {
   throw ApiError.badRequest('The WhatsApp number is managed in AdsEra — disconnect it there (app.adsera.in)');
 });
 
+/** POST /whatsapp/gateway/import { days } — bring existing AdsEra chats into the inbox. */
+exports.importChats = catchAsync(async (req, res) => {
+  const days = Math.min(90, Math.max(1, Number(req.body?.days) || 30));
+  const r = await require('../helpers/adseraSync').importChats({ since: new Date(Date.now() - days * 86400000) });
+  if (r.skipped) return res.json({ success: true, message: 'An import is already running — try again in a minute', data: r });
+  await record(req, 'update', 'WhatsApp', '-', `Imported ${r.messages} WhatsApp message(s) from ${r.contacts} chat(s)`);
+  res.json({ success: true, message: `${r.messages} message(s) from ${r.contacts} chat(s) brought in`, data: r });
+});
+
 /** Approved templates, for messages to people who have not written in 24 hours. */
 exports.templates = catchAsync(async (req, res) => {
   res.json({ success: true, data: await adsera.templates() });
