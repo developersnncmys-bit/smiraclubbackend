@@ -66,6 +66,9 @@ app.use(
       return done(null, allowed(origin));
     },
     credentials: true,
+    // The browser asked permission before every request (a second round trip
+    // each time); it may now remember the answer for a day.
+    maxAge: 86400,
   })
 );
 
