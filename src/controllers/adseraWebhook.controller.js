@@ -57,6 +57,8 @@ async function inbound(d) {
   conversation.lastMessageAt = at;
   conversation.unread = (conversation.unread || 0) + 1;
   await conversation.save();
+  // A lead in Sales & Leads for this number (the existing one, or a new one).
+  await require('../helpers/chatLead').ensureLead(conversation);
 }
 
 exports.receive = async (req, res) => {

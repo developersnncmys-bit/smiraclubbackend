@@ -30,6 +30,8 @@ connectDB()
 
     // WhatsApp chats from AdsEra every 2 minutes — a backup for the webhook.
     const chats = require('./src/helpers/adseraSync');
+    // Chats already in the inbox without a lead get one (or their existing one), once.
+    setTimeout(() => require('./src/helpers/chatLead').linkAllChats().catch((e) => console.error('WhatsApp leads:', e.message)), 15 * 1000);
     setTimeout(() => chats.syncRecent().catch((e) => console.error('WhatsApp sync:', e.message)), 20 * 1000);
     setInterval(() => chats.syncRecent().catch((e) => console.error('WhatsApp sync:', e.message)), 2 * 60 * 1000);
 

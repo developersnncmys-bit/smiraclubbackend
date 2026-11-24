@@ -91,6 +91,8 @@ async function syncContact(contact, accountId) {
   // Unread only while the customer had the last word.
   c.unread = last?.from === 'them' ? (c.unread || 0) + unread : 0;
   await c.save();
+  // A lead in Sales & Leads for this number (the existing one, or a new one).
+  await require('./chatLead').ensureLead(c);
   return added;
 }
 
