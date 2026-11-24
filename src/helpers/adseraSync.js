@@ -60,7 +60,11 @@ async function syncContact(contact, accountId) {
   for (const m of messages) {
     if (!m.messageId || have.has(m.messageId)) continue;
     const at = m.at ? new Date(m.at) : new Date();
-    const text = String(m.preview || `[${m.type || 'message'}]`).slice(0, 4096);
+    // AdsEra shows a template as `[Template "name"] text`: keep the text,
+    // and the name on its own.
+    const raw = String(m.preview || `[${m.type || 'message'}]`);
+    const tpl = raw.match(/^\[Template "([^"]*)"\]\s*/);
+    const text = (tpl ? raw.slice(tpl[0].length) : raw).slice(0, 4096);
     const inbound = m.direction === 'inbound';
     // A message the CRM itself sent is already on the thread (without an id).
     if (!inbound) {
@@ -72,7 +76,7 @@ async function syncContact(contact, accountId) {
         continue;
       }
     }
-    c.messages.push({ from: inbound ? 'them' : m.sentBy === 'AI' ? 'bot' : 'me', text, at, waId: m.messageId });
+    c.messages.push({ from: inbound ? 'them' : m.sentBy === 'AI' ? 'bot' : 'me', text, at, waId: m.messageId, ...(tpl ? { templateName: tpl[1] } : {}) });
     have.add(m.messageId);
     added += 1;
     if (inbound) unread += 1;

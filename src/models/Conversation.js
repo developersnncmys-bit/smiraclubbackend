@@ -10,6 +10,10 @@ const messageSchema = new mongoose.Schema(
     templateName: String,
     /** WhatsApp's own id for it (from AdsEra), so a repeated webhook is not added twice. */
     waId: String,
+    // Who on the desk sent it, and whether WhatsApp refused it (and why).
+    byName: String,
+    failed: Boolean,
+    error: String,
     delivered: { type: Boolean, default: true },
     read: { type: Boolean, default: false },
   },

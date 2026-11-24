@@ -26,23 +26,29 @@ exports.reply = catchAsync(async (req, res) => {
   const { text, templateName } = req.body;
   if (!text) throw ApiError.badRequest('Write something first');
 
-  const conversation = await Conversation.findByIdAndUpdate(
-    req.params.id,
-    {
-      $push: { messages: { from: 'me', text, templateName, at: new Date() } },
-      lastMessageAt: new Date(),
-      unread: 0,
-      handledBy: 'Staff',
-    },
-    { new: true }
-  );
-  if (!conversation) throw ApiError.notFound('Conversation not found');
+  const found = await Conversation.findById(req.params.id).select('phone name messages.from messages.at').lean();
+  if (!found) throw ApiError.notFound('Conversation not found');
 
-  // Out through AdsEra; the reply is kept in the inbox either way. A free-text
-  // reply only reaches somebody who wrote in the last 24 hours — otherwise
-  // WhatsApp refuses it and the panel is told why.
+  // A typed message only reaches somebody who wrote in the last 24 hours —
+  // WhatsApp's rule. Past that it takes the request and then drops it, so the
+  // desk thought it had gone. Say so now instead; a template still goes.
+  if (!req.body.template) {
+    const lastIn = [...(found.messages || [])].reverse().find((m) => m.from === 'them');
+    const age = lastIn ? Date.now() - new Date(lastIn.at).getTime() : Infinity;
+    if (age > 24 * 60 * 60 * 1000) {
+      throw new ApiError(
+        409,
+        lastIn
+          ? `${found.name || 'They'} last wrote more than 24 hours ago — WhatsApp only allows an approved template now`
+          : `${found.name || 'They'} have not written to you yet — WhatsApp only allows an approved template`
+      );
+    }
+  }
+
+  // Out through AdsEra first, then onto the thread with how it went.
   let delivered = false;
   let problem = '';
+  const conversation = found;
   if (conversation.phone && adsera.configured()) {
     try {
       if (req.body.template) await adsera.sendTemplate(req.body.template, conversation.phone, req.body.vars || {});
@@ -54,7 +60,26 @@ exports.reply = catchAsync(async (req, res) => {
   } else if (!adsera.configured()) {
     problem = 'WhatsApp is not set up on the server';
   }
-  res.json({ success: true, data: conversation, delivered, ...(problem ? { message: problem } : {}) });
+  const saved = await Conversation.findByIdAndUpdate(
+    req.params.id,
+    {
+      $push: {
+        messages: {
+          from: 'me',
+          text,
+          templateName,
+          at: new Date(),
+          byName: req.user?.name,
+          ...(delivered ? {} : { failed: true, error: problem.slice(0, 300) }),
+        },
+      },
+      lastMessageAt: new Date(),
+      unread: 0,
+      handledBy: 'Staff',
+    },
+    { new: true }
+  ).populate('owner', 'name code');
+  res.json({ success: true, data: saved, delivered, ...(problem ? { message: problem } : {}) });
 });
 
 /** A message coming the other way — from the customer or the bot. */
