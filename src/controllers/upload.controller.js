@@ -77,6 +77,9 @@ exports.read = catchAsync(async (req, res) => {
   const bytes = Buffer.isBuffer(doc.data) ? doc.data : Buffer.from(doc.data?.buffer || doc.data);
 
   res.type(doc.contentType);
+  // The admin panel, the partner dashboard and the website are other sites
+  // than the API; helmet's default (same-origin) stopped them drawing these.
+  res.set('Cross-Origin-Resource-Policy', 'cross-origin');
   res.set('Content-Length', String(bytes.length));
   res.set('Cache-Control', 'private, max-age=3600');
   res.set('Content-Disposition', `inline; filename="${doc.filename.replace(/"/g, '')}"`);
