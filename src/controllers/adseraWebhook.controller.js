@@ -59,6 +59,8 @@ async function inbound(d) {
   await conversation.save();
   // A lead in Sales & Leads for this number (the existing one, or a new one).
   await require('../helpers/chatLead').ensureLead(conversation);
+  // "STOP" ends their 6-day follow-up.
+  await require('../helpers/followupDrip').stopIfAsked(ten, textOf(d));
 }
 
 exports.receive = async (req, res) => {

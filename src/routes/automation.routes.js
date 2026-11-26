@@ -7,6 +7,8 @@ router.use(protect);
 
 router.get('/options', c.options);
 router.get('/history', c.history);
+router.get('/followup', c.followupRead);
+router.put('/followup', can('Users', 'edit'), c.followupSave);
 
 router
   .route('/')

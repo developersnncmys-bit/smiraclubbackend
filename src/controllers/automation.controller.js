@@ -94,3 +94,17 @@ exports.history = catchAsync(async (req, res) => {
     .lean();
   res.json({ success: true, data: rows });
 });
+
+/* -- The 6-day WhatsApp follow-up -------------------------------------------- */
+const drip = require('../helpers/followupDrip');
+
+exports.followupRead = catchAsync(async (req, res) => {
+  const [config, counts] = await Promise.all([drip.config(), drip.counts()]);
+  res.json({ success: true, data: { config, counts } });
+});
+
+exports.followupSave = catchAsync(async (req, res) => {
+  const config = await drip.save(req.body || {}, req.user?._id);
+  await record(req, 'update', 'Setting', undefined, `6-day follow-up ${config.enabled ? 'on' : 'off'}`);
+  res.json({ success: true, data: { config, counts: await drip.counts() } });
+});

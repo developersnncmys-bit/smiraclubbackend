@@ -82,6 +82,27 @@ async function send(templateName, phone, vars, { name, log = true } = {}) {
   }
 }
 
+/** Whether automatic messages can go at all (not switched off, AdsEra set up). */
+const ready = () => !off() && adsera.configured();
+
+/**
+ * Send a template whose only blank is the person's name — {{name}},
+ * {{customer_name}}, {{1}} and the like. Any other blank gets a dash, so
+ * a follow-up template should ask for the name and nothing else.
+ */
+async function sendNamed(templateName, phone, name) {
+  if (!ready()) return false;
+  let t;
+  try {
+    t = await templateNamed(templateName);
+  } catch {
+    return false;
+  }
+  if (!t) return send(templateName, phone, {}, { name });
+  const vars = Object.fromEntries((t.params || []).map((p) => [p, /name|^1$/i.test(p) ? first(name) : '-']));
+  return send(templateName, phone, vars, { name });
+}
+
 // -- The events ------------------------------------------------------------------
 
 /** A new enquiry from the website (or an ad). */
@@ -296,6 +317,8 @@ async function sendFollowupReminders() {
 
 module.exports = {
   send,
+  sendNamed,
+  ready,
   welcome,
   membershipActivated,
   paymentReceived,

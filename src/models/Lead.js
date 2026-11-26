@@ -108,6 +108,22 @@ const leadSchema = new mongoose.Schema(
     stageChangedAt: { type: Date, default: Date.now },
 
     activities: [activitySchema],
+
+    /**
+     * Where this lead is in the 6-day WhatsApp follow-up (helpers/followupDrip.js).
+     * Started for every lead saved as new; imports never get it.
+     */
+    drip: {
+      startedAt: Date,
+      /** The last day sent, 0 before Day 1. */
+      day: { type: Number, default: 0 },
+      /** The next day may go from this moment (midnight in India for Days 2–6). */
+      nextOn: Date,
+      lastAt: Date,
+      done: Boolean,
+      /** Why it stopped early, if it did. */
+      stopped: String,
+    },
     tags: [String],
     notes: String,
 
@@ -122,6 +138,7 @@ withCode(leadSchema, 'LEAD', { pad: 4, start: 2000 });
 leadSchema.index({ name: 'text', phone: 'text', destination: 'text' });
 leadSchema.index({ status: 1, owner: 1, createdAt: -1 });
 leadSchema.index({ owner: 1, assignedAt: -1 });
+leadSchema.index({ 'drip.nextOn': 1 }, { sparse: true });
 
 /** Days in the current stage — the funnel report asks for this. */
 leadSchema.virtual('daysInStage').get(function daysInStage() {
@@ -132,6 +149,15 @@ leadSchema.virtual('daysInStage').get(function daysInStage() {
 
 leadSchema.virtual('isOverdue').get(function isOverdue() {
   return Boolean(this.nextFollowUpAt && this.nextFollowUpAt < new Date());
+});
+
+/** A new lead starts the 6-day follow-up; Day 1 is due straight away. */
+leadSchema.pre('save', function startDrip(next) {
+  if (this.isNew && !this.drip?.startedAt) {
+    const now = new Date();
+    this.drip = { startedAt: now, day: 0, nextOn: now };
+  }
+  next();
 });
 
 /** Moving stage stamps the clock, so time-in-stage stays honest. */

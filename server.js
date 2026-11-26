@@ -35,6 +35,10 @@ connectDB()
     setTimeout(() => chats.syncRecent().catch((e) => console.error('WhatsApp sync:', e.message)), 20 * 1000);
     setInterval(() => chats.syncRecent().catch((e) => console.error('WhatsApp sync:', e.message)), 2 * 60 * 1000);
 
+    // The 6-day WhatsApp follow-up for new leads, every 5 minutes.
+    const drip = require('./src/helpers/followupDrip');
+    setInterval(() => drip.run().catch((e) => console.error('6-day follow-up:', e.message)), 5 * 60 * 1000);
+
     // WhatsApp timers: booking reminders (2 days before) and staff follow-up reminders.
     const notify = require('./src/helpers/notify');
     setInterval(() => notify.sendBookingReminders().catch((e) => console.error('Booking reminders:', e.message)), 60 * 60 * 1000);
