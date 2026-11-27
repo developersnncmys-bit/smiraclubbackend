@@ -72,7 +72,14 @@ async function send(templateName, phone, vars, { name, log = true } = {}) {
       console.warn(`WhatsApp template "${templateName}" is not approved in AdsEra yet — not sent`);
       return false;
     }
-    const clean = Object.fromEntries(Object.entries(vars).map(([k, v]) => [k, String(v ?? '').replace(/\s+/g, ' ').trim() || '-']));
+    // Only the blanks this template has — one set of details serves an old
+    // and a new version of the same message.
+    const wanted = t.params?.length ? new Set(t.params) : null;
+    const clean = Object.fromEntries(
+      Object.entries(vars)
+        .filter(([k]) => !wanted || wanted.has(k))
+        .map(([k, v]) => [k, String(v ?? '').replace(/\s+/g, ' ').trim() || '-'])
+    );
     await adsera.sendTemplate(t.id, to, clean);
     if (log) await logToThread(to, name || clean.name, fill(t.body, clean), templateName);
     return true;
@@ -192,15 +199,44 @@ async function bookingPerson(b) {
   return { phone: c?.phone, name: c?.name || b.customerName };
 }
 
+/** The new wording (name_v2) once it is approved in AdsEra, else the one in use. */
+async function versionOf(name) {
+  try {
+    if (await templateNamed(`${name}_v2`)) return `${name}_v2`;
+  } catch {
+    /* fall back */
+  }
+  return name;
+}
+
 async function bookingChanged(b, { isNew, changed }) {
   const who = await bookingPerson(b);
   if (!who.phone) return;
-  const base = { name: first(who.name), booking_id: b.code };
   const start = b.checkIn || b.departureOn;
+  // Everything either version of a booking message asks for; send() keeps
+  // just the blanks the template being sent has.
+  let member = null;
+  if (b.membership) {
+    const Membership = require('../models/Membership');
+    member = await Membership.findById(b.membership).select('memberId code planName').lean().catch(() => null);
+  }
+  const base = {
+    name: first(who.name),
+    customer_name: String(who.name || '').trim() || 'Guest',
+    booking_id: b.code,
+    hotel: placeOf(b),
+    property: placeOf(b),
+    check_in: day(start),
+    check_in_date: day(start),
+    check_out: day(b.checkOut) || day(start),
+    check_out_date: day(b.checkOut) || day(start),
+    membership_id: member?.memberId || member?.code || '-',
+    membership_name: member?.planName || b.membershipPlan || 'Smira Club',
+  };
 
   if (isNew || (changed.includes('status') && b.status === 'Confirmed')) {
     if (b.status === 'Confirmed') {
-      return send('booking_confirmed', who.phone, {
+      return send(await versionOf('booking_confirmed'), who.phone, {
         ...base,
         hotel: placeOf(b),
         check_in: day(start),
@@ -209,7 +245,7 @@ async function bookingChanged(b, { isNew, changed }) {
       }, { name: who.name });
     }
     if (isNew && b.status !== 'Cancelled') {
-      return send('booking_request_received', who.phone, {
+      return send(await versionOf('booking_request_received'), who.phone, {
         ...base,
         hotel: placeOf(b),
         dates: b.checkOut ? `${day(start)} to ${day(b.checkOut)}` : day(start) || 'your chosen dates',
@@ -219,7 +255,7 @@ async function bookingChanged(b, { isNew, changed }) {
   }
 
   if (changed.includes('status') && b.status === 'Cancelled') {
-    return send('booking_cancelled', who.phone, {
+    return send(await versionOf('booking_cancelled'), who.phone, {
       ...base,
       hotel: placeOf(b),
       refund_note: Number(b.refund) > 0
@@ -229,7 +265,7 @@ async function bookingChanged(b, { isNew, changed }) {
   }
 
   if ((changed.includes('checkIn') || changed.includes('checkOut')) && b.status !== 'Cancelled') {
-    return send('booking_updated', who.phone, {
+    return send(await versionOf('booking_updated'), who.phone, {
       ...base,
       change: b.checkOut
         ? `Check-in is now ${day(b.checkIn)} and check-out is ${day(b.checkOut)}`
@@ -243,10 +279,13 @@ async function bookingChanged(b, { isNew, changed }) {
 async function bookingReminder(b) {
   const who = await bookingPerson(b);
   if (!who.phone) return false;
-  return send('booking_reminder', who.phone, {
+  return send(await versionOf('booking_reminder'), who.phone, {
     name: first(who.name),
+    customer_name: String(who.name || '').trim() || 'Guest',
     hotel: placeOf(b),
     check_in: day(b.checkIn || b.departureOn),
+    check_in_date: day(b.checkIn || b.departureOn),
+    check_out_date: day(b.checkOut) || day(b.checkIn || b.departureOn),
     booking_id: b.code,
   }, { name: who.name });
 }
