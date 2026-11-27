@@ -108,19 +108,57 @@ async function sendNamed(templateName, phone, name) {
 /** A new enquiry from the website (or an ad). */
 const welcome = (lead) => send('welcome_enquiry', lead.phone, { name: first(lead.name) }, { name: lead.name });
 
-/** A membership has just become Active. */
-const membershipActivated = (m) =>
-  send(
-    'membership_activated',
+/**
+ * A membership has just become Active.
+ *
+ * The full version with the purchase invoice (membership_activated_invoice)
+ * goes once it is approved in AdsEra; until then the short one does.
+ */
+async function membershipActivated(m) {
+  const short = () =>
+    send(
+      'membership_activated',
+      m.phone,
+      {
+        name: first(m.name),
+        plan: String(m.planName || 'Smira Club').split(' ')[0],
+        member_id: m.memberId || m.code,
+        valid_till: day(m.expiresOn),
+      },
+      { name: m.name }
+    );
+  let full = null;
+  try {
+    full = await templateNamed('membership_activated_invoice');
+  } catch {
+    full = null;
+  }
+  if (!full) return short();
+
+  const Invoice = require('../models/Invoice');
+  const inv = await Invoice.findOne({ membership: m._id }).sort({ createdAt: -1 }).select('code issuedOn baseAmount discount paid amount').lean().catch(() => null);
+  const amount = Number(inv?.baseAmount || m.amount || 0);
+  const discount = Number(inv?.discount ?? m.discount ?? 0);
+  const paid = Number(inv?.paid || m.paid || inv?.amount || Math.max(0, amount - discount));
+  const activated = m.activation?.activatedOn || m.startedOn || new Date();
+  return send(
+    'membership_activated_invoice',
     m.phone,
     {
-      name: first(m.name),
-      plan: String(m.planName || 'Smira Club').split(' ')[0],
-      member_id: m.memberId || m.code,
-      valid_till: day(m.expiresOn),
+      customer_name: String(m.name || '').trim() || 'Member',
+      membership_name: m.planName || 'Smira Club',
+      membership_id: m.memberId || m.code,
+      activation_date: day(activated),
+      expiry_date: day(m.expiresOn),
+      invoice_number: inv?.code || m.paymentRef || m.code,
+      invoice_date: day(inv?.issuedOn || m.receivedOn || activated),
+      membership_amount: rupees(amount),
+      discount_amount: rupees(discount),
+      amount_paid: rupees(paid),
     },
     { name: m.name }
   );
+}
 
 /** Money has come in. */
 async function paymentReceived(p) {
