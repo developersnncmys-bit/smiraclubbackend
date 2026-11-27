@@ -37,8 +37,10 @@ async function couponFor(rawCode, { spend = 0, use = '', plan = '' } = {}) {
   const no = (reason) => ({ code, valid: false, off: 0, reason, offer });
 
   if (offer.status !== 'Live') return no('That code is not running at the moment.');
-  if (offer.startsOn && offer.startsOn > now) return no('That code has not started yet.');
-  if (offer.endsOn && offer.endsOn < now) return no('That code has expired.');
+  // Whole days: from the start of its first day to the end of its last.
+  const dates = require('./offerDays').inDates(offer, now);
+  if (dates === 'not-started') return no('That code has not started yet.');
+  if (dates === 'ended') return no('That code has expired.');
   if (offer.usageLimit && offer.used >= offer.usageLimit) return no('That code has been fully claimed.');
   if (use && offer.appliesTo?.length && !offer.appliesTo.includes(use))
     return no(`That code cannot be used on a ${use.toLowerCase()}.`);

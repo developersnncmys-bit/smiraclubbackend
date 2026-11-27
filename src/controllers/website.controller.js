@@ -1819,12 +1819,10 @@ exports.listingView = catchAsync(async (req, res) => {
  */
 exports.liveOffers = catchAsync(async (req, res) => {
   const now = new Date();
+  // Whole days in India — see helpers/offerDays.js.
   const offers = await Offer.find({
     status: 'Live',
-    $and: [
-      { $or: [{ startsOn: null }, { startsOn: { $lte: now } }] },
-      { $or: [{ endsOn: null }, { endsOn: { $gte: now } }] },
-    ],
+    ...require('../helpers/offerDays').inDatesQuery(now),
   })
     .sort({ endsOn: 1, createdAt: -1 })
     .lean();

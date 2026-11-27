@@ -20,8 +20,9 @@ exports.validateCoupon = catchAsync(async (req, res) => {
   const now = new Date();
   const problems = [];
   if (offer.status !== 'Live') problems.push('That offer is not live');
-  if (offer.startsOn && offer.startsOn > now) problems.push('That offer has not started yet');
-  if (offer.endsOn && offer.endsOn < now) problems.push('That offer has run out');
+  const dates = require('../helpers/offerDays').inDates(offer, now);
+  if (dates === 'not-started') problems.push('That offer has not started yet');
+  if (dates === 'ended') problems.push('That offer has run out');
   if (offer.usageLimit && offer.used >= offer.usageLimit) problems.push('That offer has been used up');
 
   const spend = Number(req.query.spend || 0);
