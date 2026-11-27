@@ -106,4 +106,7 @@ customerSchema.virtual('referral.pending').get(function pending() {
   return Math.max(0, (this.referral?.earned || 0) - (this.referral?.redeemed || 0));
 });
 
+/** Which dated WhatsApp messages have gone (helpers/lifecycle.js), so each goes once. */
+customerSchema.add({ notices: mongoose.Schema.Types.Mixed });
+
 module.exports = mongoose.model('Customer', customerSchema);

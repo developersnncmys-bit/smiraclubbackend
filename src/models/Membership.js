@@ -194,4 +194,7 @@ watchChanges(membershipSchema, ['status'], (doc, info) => {
   return undefined;
 });
 
+/** Which dated WhatsApp messages have gone (helpers/lifecycle.js), so each goes once. */
+membershipSchema.add({ notices: mongoose.Schema.Types.Mixed });
+
 module.exports = mongoose.model('Membership', membershipSchema);

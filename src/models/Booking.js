@@ -155,4 +155,7 @@ bookingSchema.pre('save', function totalUp(next) {
   next();
 });
 
+/** Which dated WhatsApp messages have gone (helpers/lifecycle.js), so each goes once. */
+bookingSchema.add({ notices: mongoose.Schema.Types.Mixed });
+
 module.exports = mongoose.model('Booking', bookingSchema);

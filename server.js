@@ -39,6 +39,10 @@ connectDB()
     const drip = require('./src/helpers/followupDrip');
     setInterval(() => drip.run().catch((e) => console.error('6-day follow-up:', e.message)), 5 * 60 * 1000);
 
+    // Dated WhatsApp messages: activation, profile, renewal, expiry, check-in/out, thanks, feedback, birthdays.
+    const lifecycle = require('./src/helpers/lifecycle');
+    setInterval(() => lifecycle.run().catch((e) => console.error('Dated messages:', e.message)), 30 * 60 * 1000);
+
     // WhatsApp timers: booking reminders (2 days before) and staff follow-up reminders.
     const notify = require('./src/helpers/notify');
     setInterval(() => notify.sendBookingReminders().catch((e) => console.error('Booking reminders:', e.message)), 60 * 60 * 1000);
