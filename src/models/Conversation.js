@@ -32,6 +32,14 @@ const conversationSchema = new mongoose.Schema(
     category: { type: String, enum: CONVERSATION_CATEGORIES, default: 'New lead' },
     score: { type: String, enum: LEAD_SCORES, default: 'Warm' },
     source: String,
+    /** Meta's ad details from their first message, when they came from a Facebook or Instagram ad. */
+    origin: {
+      source: String,
+      campaign: String,
+      adId: String,
+      url: String,
+      how: String,
+    },
 
     membershipName: String,
     planName: String,

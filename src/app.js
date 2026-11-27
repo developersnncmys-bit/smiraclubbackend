@@ -19,6 +19,8 @@ app.use(compression());
 app.use('/api/leads/import', express.json({ limit: '100mb' }));
 // Razorpay signs the exact bytes it sends, so its webhook keeps the raw body.
 app.use('/api/website/razorpay/webhook', express.raw({ type: '*/*', limit: '1mb' }));
+// Meta signs its lead-form calls the same way.
+app.use('/api/meta/webhook', express.raw({ type: '*/*', limit: '1mb' }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 

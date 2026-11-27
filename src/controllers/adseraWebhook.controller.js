@@ -52,6 +52,10 @@ async function inbound(d) {
     });
   }
 
+  // Came from a Facebook or Instagram ad? Meta puts the ad on the first message.
+  const ref = require('../helpers/leadSource').referralOf(d);
+  if (ref && !conversation.origin?.source) conversation.origin = ref;
+
   const at = d.timestamp ? new Date(d.timestamp) : new Date();
   conversation.messages.push({ from: 'them', text: textOf(d).slice(0, 4096), at, waId: d.messageId });
   conversation.lastMessageAt = at;
@@ -69,6 +73,15 @@ exports.receive = async (req, res) => {
   res.sendStatus(200); // answer within AdsEra's 5 seconds, then do the work
 
   const { event, data } = req.body || {};
+  // The last few deliveries, as sent, so what AdsEra includes (ad details and
+  // all) can be checked from the panel's settings without guessing.
+  require('../models/Setting')
+    .findOneAndUpdate(
+      { key: 'adseraWebhookSamples' },
+      { $push: { value: { $each: [{ at: new Date(), body: req.body }], $slice: -15 } } },
+      { upsert: true }
+    )
+    .catch(() => {});
   try {
     if (event === 'message.new' && data && data.direction !== 'outbound') await inbound(data);
   } catch (err) {

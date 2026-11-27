@@ -54,6 +54,12 @@ router.use('/scheduled-reports', require('./scheduledReport.routes'));
 // AdsEra tells us about WhatsApp messages here (checked by its x-secret header).
 router.post('/adsera/webhook', require('../controllers/adseraWebhook.controller').receive);
 
+// Facebook and Instagram lead forms (Meta Lead Ads). See controllers/metaLeads.controller.js.
+const metaLeads = require('../controllers/metaLeads.controller');
+router.get('/meta/webhook', metaLeads.verify);
+router.post('/meta/webhook', metaLeads.receive);
+router.get('/meta/status', require('../middleware/auth').protect, metaLeads.status);
+
 // What the public website sends in, with nobody signed in.
 router.use('/website', require('./website.routes'));
 
